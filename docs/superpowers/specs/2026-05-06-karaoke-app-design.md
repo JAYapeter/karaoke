@@ -84,23 +84,57 @@ The technically critical part. Three sub-problems: getting bytes, playing them, 
 
 ### 4.1 Getting bytes
 
-YouTube CDN URLs from `yt-dlp` are short-lived and IP-locked. Browsers cannot always fetch them directly (CORS, user-agent checks). We proxy:
+YouTube CDN URLs from `yt-dlp` are short-lived, IP-locked, and require specific request headers (User-Agent, sometimes cookies). Browsers cannot fetch them directly. The backend proxies all bytes.
+
+> **Hard rule — same-origin only.** The `<video>` element must only ever see URLs on our own origin (`http://localhost:3000` for source, `http://<lan-ip>:3000` for any other client). **Never** issue a 3xx redirect to a YouTube CDN URL or expose the upstream URL to the client. `MediaElementAudioSourceNode` outputs **silence** if the underlying media is cross-origin without permissive CORS headers; we side-step that entirely by keeping bytes on our origin.
 
 ```
 <video src="http://localhost:3000/api/stream/{videoId}">
                           │
                           ▼
         Backend /api/stream/[videoId]:
-          1. yt-dlp -f "best[ext=mp4]/best" -g {videoId}   (memo'd per video)
-          2. Open upstream connection, pipe bytes to response
-          3. Pass through `Range` headers to upstream
+          1. Resolve format (see "Format selection"); cache per videoId
+          2. Fetch upstream with the same headers yt-dlp used (UA, cookies if any)
+          3. Pipe bytes to client
+          4. Honor Range / 206 / Content-Range (see "Range semantics")
+          5. On upstream 403/410 (URL expired) → re-resolve and resume transparently
 ```
 
-We use **muxed MP4** (combined video + audio in one file) so we don't have to sync two streams. Quality is typically 720p with AAC audio — fine for karaoke.
+#### Format selection
 
-**Pre-fetch:** when a song starts, the backend kicks off `yt-dlp` for the *next* queue item so its URL is hot when needed. Prevents a 1–3s gap between songs.
+A single `-f` selector is brittle (YouTube progressive MP4 is often capped at 360p; format 22 is unreliable). The proxy uses an ordered policy:
 
-**Refresh:** if the proxy errors mid-stream (URL expired), source records `currentTime`, asks server for a fresh URL, swaps `<video>.src`, seeks back. AudioWorklet is unaffected (it sits on the audio graph, not the element). Pitch preserved.
+1. **Preferred** — muxed progressive MP4, H.264 + AAC, ≤720p:
+   `best[ext=mp4][vcodec^=avc1][acodec^=mp4a][height<=720]`
+2. **Fallback A** — any progressive MP4 with audio: `best[ext=mp4][acodec!=none]`
+3. **Fallback B** — any progressive container with both tracks: `best[acodec!=none][vcodec!=none]`
+4. **Reject** — if only DASH-only formats exist, fail with `player.error` and a toast.
+
+The selector list lives in a single config array so an extractor change can be patched without code edits. **MSE-based DASH assembly is explicitly out of scope for MVP** — we accept the ≤720p quality ceiling that progressive formats imply.
+
+#### Range semantics
+
+The proxy supports HTTP `Range` to enable seeking and progressive playback:
+
+- Pass `Range` through to upstream; relay `206 Partial Content` and `Content-Range` verbatim.
+- If client requests an unsatisfiable range, return `416`.
+- If upstream lacks Range support for a given format, fall back to streaming from byte 0 (slow seeks become full restarts; acceptable for MVP).
+- On upstream 5xx mid-range, drop the connection — client retries; proxy re-resolves the URL if needed.
+
+#### URL lifecycle
+
+Resolved URLs carry a TTL in their query string (typically ~6 hours). Proxy caches `(videoId → { url, expiresAt, headers })` per-process and:
+
+- **Proactively re-resolves** when `expiresAt − now() < 5 min`, before the client hits an error.
+- On any upstream `403`/`410`, evicts the entry and re-resolves once (single retry budget per request).
+
+#### Pre-fetch
+
+When a song starts, the backend kicks off `yt-dlp` resolution for the *next* queue item. Prevents the 1–3s stall between songs. No crossfade in MVP — the next song just starts.
+
+#### Mid-song URL refresh
+
+If the proxy can't recover from an upstream failure, it closes the response. Source then records `<video>.currentTime`, sets `<video>.src` to the same `/api/stream/...` URL with a cache-busting query param, and seeks back. AudioWorklet sits on the graph (not the element) and is unaffected; pitch preserved.
 
 ### 4.2 Playback graph
 
@@ -119,6 +153,7 @@ Connecting the video into a `MediaElementAudioSourceNode` redirects its audio ou
 - **Time-stretch is locked off.** Pitch only. No speed change.
 - **Range:** ±6 semitones, integer steps. Quality holds well in this range.
 - **Granularity:** integer semitones (one step = one half-tone).
+- **Failure path:** if the worklet module fails to load, `AudioContext` stays suspended >5 s, or the worklet reports persistent CPU overload, the source bypasses the worklet (video element plays directly to the audio device) and emits a toast: *"Pitch shift unavailable — playing at original key."* The next song retries the worklet from a clean state. The show continues either way.
 
 ### 4.4 Pitch state
 
@@ -145,6 +180,25 @@ When the next song starts: `livePitch = newItem.prePitch`.
 - **Pause / Play** — standard.
 - **Master volume** — `GainNode` between worklet and destination, 0–1.
 - **Pitch override** — source's slider always works, even on someone else's song.
+
+### 4.6 Source startup — token, gesture, and unlock
+
+Two things must happen before audio can play, both on the source device only:
+
+1. **Source token** — when the server starts, it generates and prints a short token to the terminal:
+   ```
+   Karaoke server running at http://192.168.1.42:3000
+   Source token:  a4f9-7c12   (enter once on the source device)
+   ```
+   `/source` displays a token field on first load. The entered token is stored in `localStorage` and sent on the WS `join` message; subsequent loads skip this step. The token authorizes source-only WS messages. **Without it, a phone that accidentally navigates to `/source` cannot seize the show.**
+
+2. **User gesture** — `AudioContext` and `<video>.play()` cannot start without a user gesture. After token entry, `/source` shows a full-screen "▶ Start show" button. On click:
+   1. Construct `AudioContext`; load the SoundTouch worklet module.
+   2. Resume the context.
+   3. Pre-create the `<video>` element and wire it into the audio graph.
+   4. Send WS `source.ready { sourceToken }`. Server sets `sourceReady: true` and broadcasts; auto-advance and pre-fetch begin.
+
+If the source page is reloaded mid-party, the token is remembered, but a "▶ Resume show" gesture is required again. The queue and history persist across the reload (server is the source of truth).
 
 ---
 
@@ -173,9 +227,10 @@ type QueueItem = {
 }
 
 type PlayerState =
-  | { status: 'idle' }
+  | { status: 'idle', epoch: number }
   | {
       status: 'playing' | 'paused'
+      epoch: number                             // monotonic; increments on every transition
       item: QueueItem
       livePitch: number                         // -6..+6
       positionSec: number                       // last-reported playhead from source
@@ -188,6 +243,8 @@ type ServerState = {
   history: QueueItem[]                          // index 0 = most recent
   player: PlayerState
   sourceConnected: boolean
+  sourceReady: boolean                          // source has unlocked AudioContext
+  sourceToken: string                           // generated on server startup
 }
 ```
 
@@ -195,37 +252,56 @@ type ServerState = {
 
 ### 5.2 Identity flow
 
-1. Phone hits `/`. Read `sessionId` and `name` from localStorage.
-2. **No session:** show name input → `POST /api/join { name }` → server creates a `User`, returns `sessionId` → phone stores both.
-3. **Has session:** open WebSocket with `?sessionId=...`. Server registers/refreshes the user.
-4. **Pitch ownership rule:** phone shows the live-pitch slider only when `player.item.queuedBy.sessionId === mySessionId`. Source always shows it.
+All control plane is over WebSocket. There is no `POST /api/join`; HTTP routes are limited to media plane (`/api/stream/:videoId`) and the static page bundle.
 
-No accounts, no passwords. URL + WiFi is the access control. Home-party trust model.
+1. Phone hits `/`. Read `sessionId` and `name` from `localStorage`.
+2. **No session:** show name input. Phone generates `sessionId` via `crypto.randomUUID()`. Stores both.
+3. **Open WebSocket** with `?sessionId=…`. First message is `join { sessionId, name, sourceToken? }`. Server registers or refreshes the user.
+4. **Source claim:** the source device sends `sourceToken` on `join`. Server matches it against the per-startup `sourceToken`; on success, that connection is flagged as the source for source-only authority.
+5. **Pitch ownership rule:** phone shows the live-pitch slider only when `player.item.queuedBy.sessionId === mySessionId`. Source always shows it.
+
+**Trust model.** Session IDs are client-generated and are *not* a security boundary; on a plain HTTP LAN connection a malicious LAN actor can spoof any sessionId. This is acceptable for a home-party app — everyone on the WiFi is trusted. The source token prevents accidental source hijack but is also not a security boundary against a determined attacker on the same WiFi.
 
 ### 5.3 WebSocket protocol
 
-Every message is `{ type, ...payload }`. Server validates and rejects malformed or unauthorized messages.
+Every message is `{ type, ...payload }`. Mutating client→server messages carry a `msgId` (client-generated UUID). The server replies to each with `state.ack { msgId, ok, error? }` and broadcasts the resulting state delta. **The server keeps the most recent 100 `msgId`s per session** and is idempotent on replay: an already-applied `msgId` returns the cached `ack` without re-doing the action. Reconnect-retries can therefore safely re-send any in-flight mutation.
 
-**Client → Server:**
+Source-only messages (player control + queue mutations beyond the queuer's own item) require the connection to have been flagged as the source via the source-token claim in `join`.
+
+**Client → Server (mutating — carry `msgId`):**
 
 | `type` | Payload | Allowed |
 |---|---|---|
-| `join` | `{ sessionId, name }` | Anyone |
-| `queue.add` | `{ videoId, prePitch }` | Anyone |
-| `queue.remove` | `{ itemId }` | Source, or queuer of that item |
-| `queue.move` | `{ itemId, toIndex }` | Source only |
-| `queue.shuffle` | `{}` | Source only |
-| `player.skip` | `{}` | Source only |
-| `player.prev` | `{}` | Source only |
-| `player.pause` | `{}` | Source only |
-| `player.play` | `{}` | Source only |
-| `player.setLivePitch` | `{ semitones }` | Source, or queuer of current song |
-| `player.setPrePitch` | `{ itemId, semitones }` | Source, or queuer of that item |
-| `player.setVolume` | `{ volume }` | Source only |
-| `player.position` | `{ positionSec }` | Source only — heartbeat (1Hz) |
-| `player.ended` | `{}` | Source only — triggers auto-advance |
-| `player.error` | `{ itemId, message }` | Source only — triggers skip-with-toast |
-| `search` | `{ query, requestId }` | Anyone |
+| `queue.add` | `{ msgId, videoId, prePitch }` | Anyone |
+| `queue.remove` | `{ msgId, itemId }` | Source, or queuer of that item |
+| `queue.move` | `{ msgId, itemId, toIndex }` | Source only |
+| `queue.shuffle` | `{ msgId }` | Source only |
+| `player.skip` | `{ msgId, epoch }` | Source only |
+| `player.prev` | `{ msgId, epoch }` | Source only |
+| `player.pause` | `{ msgId }` | Source only |
+| `player.play` | `{ msgId }` | Source only |
+| `player.setLivePitch` | `{ msgId, semitones }` | Source, or queuer of current song |
+| `player.setPrePitch` | `{ msgId, itemId, semitones }` | Source, or queuer of that item |
+| `player.setVolume` | `{ msgId, volume }` | Source only |
+
+**Client → Server (non-mutating — carry `msgId` for response correlation):**
+
+| `type` | Payload | Allowed |
+|---|---|---|
+| `join` | `{ msgId, sessionId, name, sourceToken? }` | First message on every connection |
+| `source.ready` | `{ msgId, sourceToken }` | After AudioContext unlock on source |
+| `search` | `{ msgId, query }` | Anyone |
+| `meta.fetch` | `{ msgId, videoId }` | Anyone |
+
+**Client → Server (source-emitted events — carry `epoch`, no `msgId`):**
+
+| `type` | Payload | Allowed |
+|---|---|---|
+| `player.position` | `{ epoch, positionSec }` | Source only — heartbeat (1 Hz) |
+| `player.ended` | `{ epoch }` | Source only — triggers auto-advance |
+| `player.error` | `{ epoch, itemId, message }` | Source only — triggers skip-with-toast |
+
+These events are **discarded by the server if `epoch ≠ player.epoch`**, so a stale `player.ended` for an already-skipped song is a no-op. (See §5.4.)
 
 **Server → Client:**
 
@@ -234,31 +310,50 @@ Every message is `{ type, ...payload }`. Server validates and rejects malformed 
 | `state.full` | Full `ServerState` (sent on connect and after large changes) |
 | `state.queue` | `{ queue, history }` |
 | `state.player` | `PlayerState` |
-| `search.results` | `{ requestId, results: SearchResult[] }` |
+| `state.ack` | `{ msgId, ok: boolean, error?: string }` |
+| `search.results` | `{ msgId, results: SearchResult[] }` |
+| `meta.result` | `{ msgId, videoId, title, thumbnail, durationSec }` |
 | `error` | `{ code, message }` |
 | `toast` | `{ level, message }` (e.g. "Couldn't load *Title*") |
 
-A "source token" is established when the first client connects to `/source`. Subsequent `/source` connections take over the token (the previous source disconnects gracefully). The token authorizes source-only actions.
+### 5.4 Auto-advance and the playback epoch
 
-### 5.4 Auto-advance
+Every player transition increments `player.epoch` (start → +1, end → +1, skip → +1, prev → +1, error → +1). The epoch makes transitions idempotent and forms the contract between server and source.
 
-- When `player.status === 'idle'` and `queue.length > 0` → server pops `queue[0]`, sets `PlayerState` to `playing` with `livePitch = prePitch`, broadcasts.
-- Source receives `state.player`, loads the stream, plays, sends `player.position` heartbeats.
-- On `player.ended`: server pushes current item to `history`, pops next, broadcasts.
-- On `player.error`: server pushes failed item to `history` (so prev still works) with a flag, broadcasts a toast, advances.
+- When `player.status === 'idle'` and `queue.length > 0` and `sourceReady === true` → server pops `queue[0]`, increments epoch, sets `PlayerState` to `playing` with `livePitch = item.prePitch`, broadcasts.
+- Source receives `state.player`, remembers the new epoch, loads the stream, plays, and tags every `player.position` / `player.ended` / `player.error` event with that epoch.
+- On `player.ended` (with current epoch): server pushes current to `history`, increments epoch, pops next, broadcasts.
+- On `player.ended` (with stale epoch): **discarded silently** — the song was already skipped/replaced.
+- On `player.error` (current epoch): server pushes the failed item to `history` flagged as errored (so `prev` can still navigate over it), increments epoch, advances, broadcasts a toast.
+- On `player.skip` / `player.prev`: server increments epoch, mutates queue/history, broadcasts. The next `state.player` carries the new epoch; source updates its local copy and ignores any in-flight events from the old epoch.
+
+This eliminates the double-advance race when a manual skip and a `player.ended` arrive close together.
 
 ### 5.5 Search and paste
 
-`queue.add` accepts only `{ videoId, prePitch }`. The server resolves `title`, `thumbnail`, and `durationSec` server-side (via `yt-dlp`) when handling the message and only then constructs the `QueueItem` and broadcasts. Phones use `/api/meta/:videoId` purely for the *preview UX* before adding.
+All control plane is over WebSocket — there is no `/api/search` or `/api/meta` HTTP endpoint. The only HTTP route is `/api/stream/:videoId` (media plane).
 
-- **Paste tab:** regex extracts `videoId` from a YouTube URL; phone calls `/api/meta/:videoId` (yt-dlp metadata) for a preview; user picks pre-pitch; "Add to queue" sends `queue.add`.
-- **Search tab:** phone calls `/api/search?q=...` (yt-dlp `ytsearch10:`); user taps a result; same preview sheet appears.
+- **Paste tab:** regex extracts `videoId` from a YouTube URL; phone sends `meta.fetch { msgId, videoId }`; server replies `meta.result { msgId, ... }`; user picks pre-pitch; "Add to queue" sends `queue.add`.
+- **Search tab:** phone sends `search { msgId, query }`; server replies `search.results { msgId, results }`; user taps a result; same preview sheet appears.
 
-### 5.6 Failure modes
+`queue.add` carries only `{ videoId, prePitch }`. The server re-resolves metadata at add time (with a 5-minute in-process cache) before constructing the `QueueItem` and broadcasting. Phones never authoritatively supply queue-item metadata.
 
-- **yt-dlp fails for a video:** source posts `player.error`; server skips item with a toast.
-- **Source disconnects mid-song:** player state freezes; phones show "Source offline." On reconnect, source resumes from the last known `positionSec`.
-- **Phone disconnects:** irrelevant to playback. Their queued items still show their snapshotted name.
+### 5.6 Failure modes and reconnect rules
+
+**yt-dlp resolution fails for a video:** source posts `player.error` (with current epoch); server skips with a toast.
+
+**Source disconnects mid-song:** server clears `sourceConnected` and `sourceReady`; player state remains; phones show "Source offline." Auto-advance halts until the source comes back. On reconnect:
+
+1. Server sends `state.full` (which includes current `player` and `epoch`).
+2. Source compares the received `epoch` to its last known epoch:
+   - **Same epoch, `status === 'playing'`:** resume the *same item* at `positionSec` (server-side `positionSec + (now − positionUpdatedAt)` projection is used as the seek target, capped at `durationSec`).
+   - **Higher epoch:** the show advanced while source was offline (e.g. another source claimed and yielded, or a manual transition was issued). Load whatever the new `player.item` is and start from `positionSec` (typically 0).
+   - **`status === 'idle' | 'paused'`:** wait for the next transition.
+3. Source then re-runs the gesture-unlock if the page was reloaded (see §4.6); otherwise resumes immediately. Server only marks `sourceReady = true` after `source.ready` is received.
+
+**Phone disconnects:** irrelevant to playback. Their queued items still show the snapshotted name. On reconnect, the phone re-sends `join`; any in-flight mutating message can be safely re-sent (server dedupes on `msgId`).
+
+**Source-token mismatch on `join`:** server ignores the `sourceToken` field and treats the connection as a regular phone. Toast: *"Invalid source token."*
 
 ---
 
@@ -288,9 +383,13 @@ Single full-screen page. Video fills the viewport. Queue and controls are an ove
 └────────────────────────────────────────────────────┘
 ```
 
-**Idle state** (empty queue): Shimokitazawa "house lights on" splash with the QR code centered and "scan to add the first song" caption.
+**Source startup states** (§4.6):
+- **Token entry** (first load only): centered card with a "source token" input, the prompt *"Enter the token printed in your terminal."* Stored in `localStorage` after acceptance.
+- **Gesture unlock**: full-screen "▶ Start show" / "▶ Resume show" button. Tapping unlocks the AudioContext and sends `source.ready`.
 
-**Keyboard shortcuts**: `Space` toggle play/pause, `→` skip, `←` prev, `↑/↓` adjust pitch ±1.
+**Idle state** (post-unlock, empty queue): Shimokitazawa "house lights on" splash with the QR code centered and "scan to add the first song" caption.
+
+**Keyboard shortcuts** (post-unlock): `Space` toggle play/pause, `→` skip, `←` prev, `↑/↓` adjust pitch ±1.
 
 ### 6.2 Phone — `/`
 
@@ -382,20 +481,27 @@ Pitch-black walls, riso-print pink + teal mottle, cigarette-cream paper, hanko-r
 
 The app is "done" for v1 when, on a freshly cloned repo on the user's MacBook:
 
-1. `brew install yt-dlp` → `npm install` → `npm run start` prints a LAN URL and a QR code.
-2. From a phone on the same WiFi, scanning the QR opens the app, asks for a name, and shows an empty queue.
-3. Searching "bohemian rhapsody karaoke" returns at least 5 plausible results within 5 seconds.
-4. Adding a song with pre-pitch −2 makes the song play on the MacBook with audio shifted down 2 semitones, lyrics visible, no audible speed change.
-5. With the song playing, dragging the queuer's pitch slider to +1 changes the audio in <500 ms with no glitch.
-6. A second phone joining and adding their own song shows up in the queue with their name.
-7. From `/source`, "skip" advances; "prev" returns to the just-played song.
-8. Closing both phone browsers does not break playback or the queue.
+1. `brew install yt-dlp` → `npm install` → `npm run start` prints a LAN URL, a QR code, and a source token.
+2. Opening `/source` on the MacBook prompts for the token; after entering it once, the source remembers it. Clicking "▶ Start show" unlocks audio.
+3. From a phone on the same WiFi, scanning the QR opens the app, asks for a name, and shows an empty queue.
+4. Searching "bohemian rhapsody karaoke" returns at least 5 plausible results within 5 seconds.
+5. Adding a song with pre-pitch −2 makes the song play on the MacBook with audio shifted down 2 semitones, lyrics visible, no audible speed change.
+6. With the song playing, dragging the queuer's pitch slider to +1 changes the audio in <500 ms with no glitch.
+7. A second phone joining and adding their own song shows up in the queue with their name.
+8. From `/source`, "skip" advances; "prev" returns to the just-played song. Pressing skip while a `player.ended` is in flight (orchestrated test) advances exactly once.
+9. Refreshing the source page mid-song restores the same item at the correct position after a "▶ Resume show" tap, with pitch preserved.
+10. Closing both phone browsers does not break playback or the queue.
 
 ---
 
 ## 9. Open risks
 
-- **YouTube format brittleness.** `yt-dlp` is a moving target; a YouTube change could break extraction. We pin a known-good `yt-dlp` version via Homebrew and provide an `npm run update-ytdlp` script.
-- **AudioWorklet quality at extreme pitches.** SoundTouch quality holds at ±6 semitones; degrades past ±8. We cap at ±6 in the UI.
-- **Embed-blocked / DRM videos.** Some music labels block extraction; the app skips with a toast — we don't attempt workarounds.
+- **YouTube format brittleness.** `yt-dlp` is a moving target; a YouTube change can break extraction. Mitigations:
+  - The format selector is an ordered policy (§4.1) with documented fallbacks rather than a single `-f` string.
+  - `npm run check-ytdlp` runs at `npm install` and on server start: verifies the installed `yt-dlp` major version, runs a smoke-test extraction against a known-good public test video, and prints a friendly upgrade hint if either fails.
+  - We document the tested `yt-dlp` version range in `README.md`. Update procedure: `brew upgrade yt-dlp` → re-run `check-ytdlp` → bump the documented range. Homebrew "pin" alone is not relied on as a stability guarantee.
+- **AudioWorklet quality at extreme pitches.** SoundTouch holds at ±6 semitones; degrades past ±8. UI is capped at ±6.
+- **AudioWorklet runtime failure.** Covered by the §4.3 degrade path (bypass worklet, play original audio, toast).
+- **Embed-blocked / DRM / DASH-only videos.** Skipped with a toast; no workarounds in MVP.
+- **LAN trust model.** The MVP assumes everyone on the WiFi is trusted (§5.2). Session IDs and the source token prevent accidental missteps but are not a security boundary against a malicious LAN actor. Out of scope for a home-party app.
 - **No persistence.** Restarting the server clears the queue. Acceptable for parties; a future iteration could add a tiny SQLite store.
