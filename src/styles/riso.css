@@ -1,0 +1,52 @@
+:root {
+  --ink-black:    #0a0808;
+  --ink-deep:     #1a1410;
+  --paper-cream:  #fff8e0;
+  --riso-pink:    #ff4d8d;
+  --riso-teal:    #4dffe5;
+  --cigarette:    #d4a847;
+  --hanko-red:    #c1272d;
+  --ink-muted:    #6a4818;
+
+  --display-font: 'Crimson Pro', Georgia, serif;
+  --mono-font: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+html, body { background: var(--ink-black); color: var(--paper-cream); }
+
+.riso-noise {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255,77,141,0.18) 0, transparent 35%),
+    radial-gradient(circle at 80% 70%, rgba(77,255,229,0.18) 0, transparent 35%);
+  mix-blend-mode: screen;
+}
+
+.paper-grain {
+  background-image: radial-gradient(circle, rgba(0,0,0,0.04) 0.5px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+.tape-strip {
+  position: relative;
+}
+.tape-strip::before {
+  content: ''; position: absolute; top: -4px; left: 50%; width: 30px; height: 8px;
+  background: rgba(212,168,71,0.7); transform: translateX(-50%) rotate(-2deg);
+}
+
+.hanko {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 1.6em; height: 1.6em; border: 1.5px solid var(--hanko-red);
+  color: var(--hanko-red); font-family: var(--display-font); font-weight: 700;
+  transform: rotate(-4deg);
+}
+
+.uc { letter-spacing: 0.2em; text-transform: uppercase; font-family: var(--mono-font); }
+
+.paper-card {
+  background: var(--paper-cream); color: var(--ink-black);
+  padding: 12px 14px; transform: rotate(-0.5deg);
+  box-shadow: 1px 1px 0 var(--cigarette);
+}
+.paper-card:nth-child(2n) { transform: rotate(0.5deg); }
