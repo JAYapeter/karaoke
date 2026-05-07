@@ -7,7 +7,7 @@ import qrcode from 'qrcode'
 import os from 'node:os'
 import { PORT } from './src/lib/config'
 import { Store } from './src/lib/server/store'
-import { Dispatcher, type IO } from './src/lib/server/dispatch'
+import { Dispatcher, createIdempotencyState, type IO } from './src/lib/server/dispatch'
 import type { ClientMessage, ServerMessage } from './src/lib/types/protocol'
 import { log } from './src/lib/log'
 
@@ -22,6 +22,8 @@ const SOURCE_TOKEN =
   Array.from(randomBytes(2)).map((b) => b.toString(16).padStart(2, '0')).join('')
 
 const store = new Store(SOURCE_TOKEN)
+// Shared idempotency state — must outlive any single socket so reconnects honor msgId dedup.
+const idem = createIdempotencyState()
 
 type ClientCtx = {
   ws: import('ws').WebSocket
@@ -44,7 +46,7 @@ const ioFor = (c: ClientCtx): IO => ({
   broadcast,
 })
 
-const dispatcherFor = (c: ClientCtx) => new Dispatcher(store, ioFor(c))
+const dispatcherFor = (c: ClientCtx) => new Dispatcher(store, ioFor(c), idem)
 
 const lanIp = (): string => {
   const ifs = os.networkInterfaces()
@@ -84,9 +86,13 @@ app.prepare().then(() => {
     ws.on('message', async (raw) => {
       let msg: ClientMessage
       try { msg = JSON.parse(String(raw)) } catch { return }
-      if (msg.type === 'join' && msg.sourceToken && store.verifySourceToken(msg.sourceToken)) {
-        ctx.isSource = true
-        store.setSourceConnected(true)
+      if (msg.type === 'join' && msg.sourceToken !== undefined) {
+        if (store.verifySourceToken(msg.sourceToken)) {
+          ctx.isSource = true
+          store.setSourceConnected(true)
+        } else {
+          ws.send(JSON.stringify({ type: 'toast', level: 'warn', message: 'Invalid source token' } as ServerMessage))
+        }
       }
       try { await d.handle({ sessionId: ctx.sessionId, isSource: ctx.isSource }, msg) }
       catch (e) { log('warn', 'dispatcher error', { e: String(e) }) }

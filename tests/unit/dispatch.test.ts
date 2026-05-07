@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Store } from '@/lib/server/store'
-import { Dispatcher } from '@/lib/server/dispatch'
+import { Dispatcher, createIdempotencyState, type IdempotencyState } from '@/lib/server/dispatch'
 
 vi.mock('@/lib/ytdlp/meta', () => ({
   fetchMeta: vi.fn().mockResolvedValue({ title: 'T', thumbnail: 'th', durationSec: 100 }),
@@ -9,13 +9,15 @@ vi.mock('@/lib/ytdlp/meta', () => ({
 let store: Store
 let send: ReturnType<typeof vi.fn> & ((msg: any) => void)
 let broadcast: ReturnType<typeof vi.fn> & ((msg: any) => void)
+let idem: IdempotencyState
 let d: Dispatcher
 
 beforeEach(() => {
   store = new Store('TOKEN')
   send = vi.fn() as any
   broadcast = vi.fn() as any
-  d = new Dispatcher(store, { send, broadcast })
+  idem = createIdempotencyState()
+  d = new Dispatcher(store, { send, broadcast }, idem)
 })
 
 describe('dispatcher', () => {
@@ -89,5 +91,36 @@ describe('dispatcher', () => {
     })
     expect(store.getUser('real-session')?.name).toBe('Mallory')
     expect(store.getUser('spoofed')).toBeUndefined()
+  })
+
+  it('idempotency state is shared — replay across new Dispatcher instances still dedupes', async () => {
+    // First Dispatcher (simulating socket #1) applies the mutation
+    await d.handle({ sessionId: 'a', isSource: false }, {
+      type: 'join', msgId: 'j1', sessionId: 'a', name: 'Alice',
+    })
+    await d.handle({ sessionId: 'a', isSource: false }, {
+      type: 'queue.add', msgId: 'q1', videoId: 'vid', prePitch: 0,
+    })
+    expect(store.getQueue().length).toBe(1)
+
+    // Second Dispatcher with the SAME idempotency state (simulating reconnect)
+    const send2 = vi.fn() as any
+    const broadcast2 = vi.fn() as any
+    const d2 = new Dispatcher(store, { send: send2, broadcast: broadcast2 }, idem)
+    await d2.handle({ sessionId: 'a', isSource: false }, {
+      type: 'queue.add', msgId: 'q1', videoId: 'vid', prePitch: 0,
+    })
+    expect(store.getQueue().length).toBe(1) // not added twice
+    expect(send2).toHaveBeenCalledWith(expect.objectContaining({ type: 'state.ack', msgId: 'q1', ok: true }))
+  })
+
+  it('stale-epoch player.error does NOT broadcast a toast', async () => {
+    // Player is idle at epoch 0; a stale player.error event for some old epoch must be silently dropped.
+    await d.handle({ sessionId: 's', isSource: true }, {
+      type: 'player.error', epoch: 999, itemId: 'x', message: 'whatever',
+    })
+    expect(broadcast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'toast' }),
+    )
   })
 })

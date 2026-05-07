@@ -21,14 +21,27 @@ export type IO = {
 
 const clampPitch = (n: number) => Math.max(PITCH_MIN, Math.min(PITCH_MAX, Math.round(n)))
 
-type CachedAck = { ok: boolean; error?: string }
+export type CachedAck = { ok: boolean; error?: string }
+
+/** Shared idempotency state across all dispatcher instances of a single server process.
+ *  This must outlive any single WebSocket connection — the spec requires per-session
+ *  msgId dedup that survives reconnects. */
+export type IdempotencyState = {
+  dedup: Dedup
+  ackCache: Map<string, CachedAck>
+}
+
+export const createIdempotencyState = (): IdempotencyState => ({
+  dedup: new Dedup(RECENT_MSG_IDS_PER_SESSION),
+  ackCache: new Map(),
+})
 
 export class Dispatcher {
-  private dedup = new Dedup(RECENT_MSG_IDS_PER_SESSION)
-  /** Stores the *original* ack outcome per (sessionId, msgId) so replays return identical results. */
-  private ackCache = new Map<string, CachedAck>()
-
-  constructor(private store: Store, private io: IO) {}
+  constructor(
+    private store: Store,
+    private io: IO,
+    private idem: IdempotencyState,
+  ) {}
 
   private ackKey(sessionId: string, msgId: string) {
     return `${sessionId}::${msgId}`
@@ -39,8 +52,8 @@ export class Dispatcher {
     const mutating = 'msgId' in msg && this.isMutating(msg)
     if (mutating && msg.msgId) {
       const key = this.ackKey(caller.sessionId, msg.msgId)
-      if (this.dedup.seen(caller.sessionId, msg.msgId)) {
-        const cached = this.ackCache.get(key) ?? { ok: true }
+      if (this.idem.dedup.seen(caller.sessionId, msg.msgId)) {
+        const cached = this.idem.ackCache.get(key) ?? { ok: true }
         this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: cached.ok, ...(cached.error ? { error: cached.error } : {}) })
         return
       }
@@ -50,13 +63,13 @@ export class Dispatcher {
       await this.dispatch(caller, msg)
       if ('msgId' in msg && msg.msgId) {
         this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: true })
-        if (mutating) this.ackCache.set(this.ackKey(caller.sessionId, msg.msgId), { ok: true })
+        if (mutating) this.idem.ackCache.set(this.ackKey(caller.sessionId, msg.msgId), { ok: true })
       }
     } catch (e) {
       const errStr = String(e)
       if ('msgId' in msg && msg.msgId) {
         this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: false, error: errStr })
-        if (mutating) this.ackCache.set(this.ackKey(caller.sessionId, msg.msgId), { ok: false, error: errStr })
+        if (mutating) this.idem.ackCache.set(this.ackKey(caller.sessionId, msg.msgId), { ok: false, error: errStr })
       }
     }
   }
@@ -209,7 +222,10 @@ export class Dispatcher {
       }
       case 'player.error': {
         if (!isSourceOnly(caller)) return
-        const r = errorCurrent(this.store.getPlayer(), this.store.getQueue(), this.store.getHistory(), msg.epoch)
+        const before = this.store.getPlayer()
+        const r = errorCurrent(before, this.store.getQueue(), this.store.getHistory(), msg.epoch)
+        // If errorCurrent returned the player unchanged, the event was stale-epoch — discard silently.
+        if (r.player === before) return
         this.store.setPlayer(r.player)
         this.store.setHistory(r.history)
         this.io.broadcast({ type: 'toast', level: 'warn', message: `Couldn't load: ${msg.message}` })
