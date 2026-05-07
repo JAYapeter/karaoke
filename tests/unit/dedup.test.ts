@@ -15,11 +15,12 @@ describe('Dedup', () => {
   })
 
   it('LRU eviction at capacity', () => {
-    const d = new Dedup(2)
+    const d = new Dedup(3)
     d.seen('s1', 'a')
     d.seen('s1', 'b')
-    d.seen('s1', 'c') // evicts 'a'
-    expect(d.seen('s1', 'a')).toBe(false) // re-recorded
-    expect(d.seen('s1', 'b')).toBe(true)
+    d.seen('s1', 'c')
+    d.seen('s1', 'd') // evicts 'a'
+    expect(d.seen('s1', 'a')).toBe(false) // re-recorded; this evicts 'b'
+    expect(d.seen('s1', 'c')).toBe(true)
   })
 })
