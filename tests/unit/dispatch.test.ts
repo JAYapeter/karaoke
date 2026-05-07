@@ -7,14 +7,14 @@ vi.mock('@/lib/ytdlp/meta', () => ({
 }))
 
 let store: Store
-let send: ReturnType<typeof vi.fn>
-let broadcast: ReturnType<typeof vi.fn>
+let send: ReturnType<typeof vi.fn> & ((msg: any) => void)
+let broadcast: ReturnType<typeof vi.fn> & ((msg: any) => void)
 let d: Dispatcher
 
 beforeEach(() => {
   store = new Store('TOKEN')
-  send = vi.fn()
-  broadcast = vi.fn()
+  send = vi.fn() as any
+  broadcast = vi.fn() as any
   d = new Dispatcher(store, { send, broadcast })
 })
 
