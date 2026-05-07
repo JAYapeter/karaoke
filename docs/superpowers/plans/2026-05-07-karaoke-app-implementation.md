@@ -1565,7 +1565,7 @@ git commit -m "feat: central in-memory state store with listeners"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/unit/dispatch.test.ts` (covers the high-leverage cases — full coverage of every message handler is not required here; the integration test exercises the rest):
+Create `tests/unit/dispatch.test.ts` (covers the high-leverage authority + dedup paths; per-handler coverage of trivial cases is left to manual smoke testing in Task 39):
 ```ts
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { Store } from '@/lib/server/store'
@@ -1599,17 +1599,33 @@ describe('dispatcher', () => {
     expect(store.getQueue()[0]?.title).toBe('T')
   })
 
-  it('queue.add is idempotent on msgId replay', async () => {
+  it('queue.add is idempotent on msgId replay (returns the original ack outcome)', async () => {
     await d.handle({ sessionId: 'a', isSource: false }, {
       type: 'join', msgId: 'j1', sessionId: 'a', name: 'Alice',
     })
     await d.handle({ sessionId: 'a', isSource: false }, {
       type: 'queue.add', msgId: 'q1', videoId: 'vid', prePitch: 0,
     })
+    send.mockClear()
     await d.handle({ sessionId: 'a', isSource: false }, {
       type: 'queue.add', msgId: 'q1', videoId: 'vid', prePitch: 0,
     })
-    expect(store.getQueue().length).toBe(1)
+    expect(store.getQueue().length).toBe(1) // not added twice
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'state.ack', msgId: 'q1', ok: true }))
+  })
+
+  it('replay of a previously-failed mutation returns the cached failure', async () => {
+    // queue.remove on a missing item → fails
+    await d.handle({ sessionId: 'a', isSource: false }, {
+      type: 'queue.remove', msgId: 'r1', itemId: 'nope',
+    })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'state.ack', msgId: 'r1', ok: false }))
+    send.mockClear()
+    // Replay → must return the same cached failure, not re-attempt
+    await d.handle({ sessionId: 'a', isSource: false }, {
+      type: 'queue.remove', msgId: 'r1', itemId: 'nope',
+    })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'state.ack', msgId: 'r1', ok: false }))
   })
 
   it('player.skip from non-source rejected', async () => {
@@ -1619,6 +1635,29 @@ describe('dispatcher', () => {
     expect(send).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'state.ack', msgId: 's1', ok: false }),
     )
+  })
+
+  it('player.position from non-source is silently dropped (no state mutation)', async () => {
+    await d.handle({ sessionId: 'a', isSource: false }, {
+      type: 'player.position', epoch: 999, positionSec: 30,
+    })
+    // Player should remain idle (epoch 0)
+    expect(store.getPlayer().status).toBe('idle')
+  })
+
+  it('source.ready with bad token sends Invalid source token toast', async () => {
+    await d.handle({ sessionId: 'a', isSource: false }, {
+      type: 'source.ready', msgId: 'sr1', sourceToken: 'WRONG',
+    })
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'toast', message: 'Invalid source token' }))
+  })
+
+  it('join uses caller.sessionId, ignores msg.sessionId mismatch', async () => {
+    await d.handle({ sessionId: 'real-session', isSource: false }, {
+      type: 'join', msgId: 'j1', sessionId: 'spoofed', name: 'Mallory',
+    })
+    expect(store.getUser('real-session')?.name).toBe('Mallory')
+    expect(store.getUser('spoofed')).toBeUndefined()
   })
 })
 ```
@@ -1654,18 +1693,27 @@ export type IO = {
 
 const clampPitch = (n: number) => Math.max(PITCH_MIN, Math.min(PITCH_MAX, Math.round(n)))
 
+type CachedAck = { ok: boolean; error?: string }
+
 export class Dispatcher {
   private dedup = new Dedup(RECENT_MSG_IDS_PER_SESSION)
+  /** Stores the *original* ack outcome per (sessionId, msgId) so replays return identical results. */
+  private ackCache = new Map<string, CachedAck>()
 
   constructor(private store: Store, private io: IO) {}
 
+  private ackKey(sessionId: string, msgId: string) {
+    return `${sessionId}::${msgId}`
+  }
+
   async handle(caller: Caller, msg: ClientMessage): Promise<void> {
-    // Idempotent replay for mutating messages
+    // Idempotent replay for mutating messages — return the cached ack (ok or fail).
     const mutating = 'msgId' in msg && this.isMutating(msg)
     if (mutating && msg.msgId) {
+      const key = this.ackKey(caller.sessionId, msg.msgId)
       if (this.dedup.seen(caller.sessionId, msg.msgId)) {
-        // already applied; ack ok
-        this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: true })
+        const cached = this.ackCache.get(key) ?? { ok: true }
+        this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: cached.ok, ...(cached.error ? { error: cached.error } : {}) })
         return
       }
     }
@@ -1674,10 +1722,13 @@ export class Dispatcher {
       await this.dispatch(caller, msg)
       if ('msgId' in msg && msg.msgId) {
         this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: true })
+        if (mutating) this.ackCache.set(this.ackKey(caller.sessionId, msg.msgId), { ok: true })
       }
     } catch (e) {
+      const errStr = String(e)
       if ('msgId' in msg && msg.msgId) {
-        this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: false, error: String(e) })
+        this.io.send({ type: 'state.ack', msgId: msg.msgId, ok: false, error: errStr })
+        if (mutating) this.ackCache.set(this.ackKey(caller.sessionId, msg.msgId), { ok: false, error: errStr })
       }
     }
   }
@@ -1691,12 +1742,18 @@ export class Dispatcher {
   private async dispatch(caller: Caller, msg: ClientMessage) {
     switch (msg.type) {
       case 'join': {
-        this.store.addUser(msg.sessionId, msg.name)
+        // Trust the WS-bound sessionId on caller, not whatever the client put in the payload.
+        const user = this.store.getUser(caller.sessionId)
+        const name = msg.name?.trim() || user?.name || 'guest'
+        this.store.addUser(caller.sessionId, name)
         this.io.send({ type: 'state.full', state: this.store.snapshot() })
         return
       }
       case 'source.ready': {
-        if (!this.store.verifySourceToken(msg.sourceToken)) throw new Error('bad source token')
+        if (!this.store.verifySourceToken(msg.sourceToken)) {
+          this.io.send({ type: 'toast', level: 'warn', message: 'Invalid source token' })
+          throw new Error('bad source token')
+        }
         this.store.setSourceReady(true)
         this.maybeAutoAdvance()
         return
@@ -1806,6 +1863,7 @@ export class Dispatcher {
         return
       }
       case 'player.position': {
+        if (!isSourceOnly(caller)) return // silently drop non-source heartbeats
         const p = this.store.getPlayer()
         if (p.status !== 'idle' && p.epoch === msg.epoch) {
           this.store.setPlayer({ ...p, positionSec: msg.positionSec, positionUpdatedAt: Date.now() })
@@ -1813,6 +1871,7 @@ export class Dispatcher {
         return
       }
       case 'player.ended': {
+        if (!isSourceOnly(caller)) return
         const r = endCurrent(this.store.getPlayer(), this.store.getQueue(), this.store.getHistory(), msg.epoch)
         this.store.setPlayer(r.player)
         this.store.setHistory(r.history)
@@ -1821,6 +1880,7 @@ export class Dispatcher {
         return
       }
       case 'player.error': {
+        if (!isSourceOnly(caller)) return
         const r = errorCurrent(this.store.getPlayer(), this.store.getQueue(), this.store.getHistory(), msg.epoch)
         this.store.setPlayer(r.player)
         this.store.setHistory(r.history)
@@ -1837,7 +1897,7 @@ export class Dispatcher {
     this.io.broadcast({ type: 'state.player', player: this.store.getPlayer() })
   }
 
-  /** If idle and source ready and queue non-empty → start next. */
+  /** If idle and source ready and queue non-empty → start next + pre-fetch the upcoming item. */
   private maybeAutoAdvance() {
     const p = this.store.getPlayer()
     if (p.status !== 'idle') return
@@ -1847,6 +1907,13 @@ export class Dispatcher {
       this.store.setPlayer(r.player)
       this.store.setQueue(r.queue)
       this.broadcastQueueAndPlayer()
+      // Pre-fetch the *next* queue item's stream so its yt-dlp URL is hot when its turn comes.
+      const upcoming = r.queue[0]
+      if (upcoming) {
+        void import('@/lib/ytdlp/stream').then(({ resolveStream }) =>
+          resolveStream(upcoming.videoId).catch(() => {}),
+        )
+      }
     }
   }
 }
@@ -1855,7 +1922,7 @@ export class Dispatcher {
 - [ ] **Step 4: Run, expect pass**
 
 Run: `npm test -- tests/unit/dispatch.test.ts`
-Expected: `3 passed`.
+Expected: `7 passed`.
 
 - [ ] **Step 5: Commit**
 
@@ -1932,6 +1999,38 @@ describe('stream proxy', () => {
     expect(res.status).toBe(200)
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
+
+  it('relays 416 unsatisfiable range', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 416, headers: { 'Content-Range': 'bytes */200' } }))
+    const res = await GET(
+      new Request('http://localhost/api/stream/v1', { headers: { Range: 'bytes=999999-' } }),
+      { params: Promise.resolve({ videoId: 'v1' }) },
+    )
+    expect(res.status).toBe(416)
+    expect(res.headers.get('Content-Range')).toBe('bytes */200')
+  })
+
+  it('on mid-range upstream 5xx, evicts and retries once; if still 5xx, relays 502', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 503 }))
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 503 }))
+    const res = await GET(
+      new Request('http://localhost/api/stream/v1', { headers: { Range: 'bytes=0-99' } }),
+      { params: Promise.resolve({ videoId: 'v1' }) },
+    )
+    expect(res.status).toBe(502)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('on a non-range upstream 5xx, evicts and retries; if recovered, relays 200', async () => {
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 502 }))
+    fetchMock.mockResolvedValueOnce(new Response('ok', { status: 200, headers: { 'Content-Type': 'video/mp4' } }))
+    const res = await GET(
+      new Request('http://localhost/api/stream/v1'),
+      { params: Promise.resolve({ videoId: 'v1' }) },
+    )
+    expect(res.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })
 ```
 
@@ -1953,6 +2052,8 @@ const upstream = async (videoId: string, range: string | null) => {
   return { res: await fetch(stream.url, { headers }), stream }
 }
 
+const isRecoverable5xx = (status: number) => status >= 500 && status <= 599
+
 export const GET = async (
   req: Request,
   ctx: { params: Promise<{ videoId: string }> },
@@ -1961,10 +2062,16 @@ export const GET = async (
   const range = req.headers.get('Range')
 
   let r = await upstream(videoId, range)
-  if (r.res.status === 403 || r.res.status === 410) {
+  // Refresh on URL-expiry-shaped errors or any upstream 5xx — the URL may be stale.
+  if (r.res.status === 403 || r.res.status === 410 || isRecoverable5xx(r.res.status)) {
     log('warn', `upstream ${r.res.status} for ${videoId}; evicting and retrying`)
     _evictStream(videoId)
     r = await upstream(videoId, range)
+  }
+
+  // After one retry, if still 5xx, surface 502 to the client (clean signal to the source's refresh path).
+  if (isRecoverable5xx(r.res.status)) {
+    return new Response('upstream unavailable', { status: 502 })
   }
 
   const out = new Headers()
@@ -1973,6 +2080,7 @@ export const GET = async (
     if (v) out.set(h, v)
   }
   out.set('Cache-Control', 'no-store')
+  // 416 (unsatisfiable range) is relayed as-is — Content-Range/* tells the client the current size.
   return new Response(r.res.body, { status: r.res.status, headers: out })
 }
 ```
@@ -1980,7 +2088,7 @@ export const GET = async (
 - [ ] **Step 4: Run, expect pass**
 
 Run: `npm test -- tests/unit/proxy.test.ts`
-Expected: `3 passed`.
+Expected: `5 passed`.
 
 - [ ] **Step 5: Commit**
 
@@ -2540,10 +2648,25 @@ git commit -m "feat(phone): queue view"
 
 ### Task 25: SearchTab
 
+This task has two steps: first, extend `useConnection` to broadcast every server message as a `karaoke-msg` window event so ad-hoc components can subscribe; then build the SearchTab.
+
 **Files:**
+- Modify: `src/lib/client/ws.ts`
 - Create: `src/components/phone/SearchTab.tsx`
 
-- [ ] **Step 1: Implement**
+- [ ] **Step 1: Add the global `karaoke-msg` event in `useConnection`**
+
+In `src/lib/client/ws.ts`, inside the `ws.addEventListener('message', …)` handler — *after* the existing `onMessage?.(msg)` line — add:
+
+```ts
+if (typeof window !== 'undefined') {
+  window.dispatchEvent(new CustomEvent('karaoke-msg', { detail: msg }))
+}
+```
+
+(Keep the existing logic; this just adds a global event for ad-hoc components.)
+
+- [ ] **Step 2: Implement SearchTab**
 
 Create `src/components/phone/SearchTab.tsx`:
 ```tsx
@@ -2551,6 +2674,7 @@ Create `src/components/phone/SearchTab.tsx`:
 import { useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { SearchResult } from '@/lib/types/state'
+import type { ServerMessage } from '@/lib/types/protocol'
 import { PrePitchSlider } from './PrePitchSlider'
 
 export const SearchTab = ({ conn }: { conn: Connection }) => {
@@ -2560,20 +2684,19 @@ export const SearchTab = ({ conn }: { conn: Connection }) => {
   const [pitch, setPitch] = useState(0)
   const [loading, setLoading] = useState(false)
 
-  const doSearch = async () => {
+  const doSearch = () => {
     if (!q.trim()) return
     setLoading(true)
     const msgId = crypto.randomUUID()
-    const handler = (e: MessageEvent<string>) => {
-      const m = JSON.parse(e.data)
+    const handler = (e: Event) => {
+      const m = (e as CustomEvent<ServerMessage>).detail
       if (m.type === 'search.results' && m.msgId === msgId) {
-        setResults(m.results); setLoading(false)
-        // @ts-expect-error remove handler
-        wsListener.off?.()
+        setResults(m.results)
+        setLoading(false)
+        window.removeEventListener('karaoke-msg', handler)
       }
     }
-    // The Connection.send doesn't expose the underlying socket; we work via manual listener:
-    window.addEventListener('karaoke-msg', handler as any, { once: true } as any)
+    window.addEventListener('karaoke-msg', handler)
     conn.send({ type: 'search', msgId, query: q.trim() })
   }
 
@@ -2615,36 +2738,11 @@ export const SearchTab = ({ conn }: { conn: Connection }) => {
 }
 ```
 
-> Note: the Connection hook isn't exposing per-message handlers; we'll wire `karaoke-msg` events from the hook in the next task.
-
-- [ ] **Step 2: Update `useConnection` to dispatch a custom event for arbitrary messages**
-
-Edit `src/lib/client/ws.ts` `ws.addEventListener('message', …)` handler — *after* `onMessage?.(msg)` — add:
-
-```ts
-window.dispatchEvent(new CustomEvent('karaoke-msg', { detail: msg }))
-```
-
-(Keep the existing logic; this just adds the global event for ad-hoc components.)
-
-In `SearchTab.tsx`, replace the `handler` body to read from `(e as any).detail` and the listener registration to `'karaoke-msg'`. Wired version:
-```ts
-const handler = (e: Event) => {
-  const m = (e as CustomEvent).detail
-  if (m.type === 'search.results' && m.msgId === msgId) {
-    setResults(m.results); setLoading(false)
-    window.removeEventListener('karaoke-msg', handler)
-  }
-}
-window.addEventListener('karaoke-msg', handler)
-conn.send({ type: 'search', msgId, query: q.trim() })
-```
-
 - [ ] **Step 3: Commit**
 
 ```bash
 git add src/components/phone/SearchTab.tsx src/lib/client/ws.ts
-git commit -m "feat(phone): search tab with global karaoke-msg event bus"
+git commit -m "feat(phone): search tab + global karaoke-msg event bus"
 ```
 
 ---
@@ -2985,11 +3083,34 @@ export const buildAudioGraph = async (mountEl: HTMLElement): Promise<AudioGraph>
 
 > Worklet param API is library-specific; we reference `'pitch'`. If the build exposes a different name (e.g. `'pitchSemitones'`), adjust here.
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 2: Module-level ref for cross-component access (volume slider)**
+
+Create `src/lib/client/audio-graph-ref.ts`:
+```ts
+'use client'
+import type { AudioGraph } from './audio-graph'
+
+let current: AudioGraph | null = null
+const listeners = new Set<() => void>()
+
+export const setAudioGraph = (g: AudioGraph | null) => {
+  current = g
+  for (const l of listeners) l()
+}
+
+export const getAudioGraph = (): AudioGraph | null => current
+
+export const subscribeAudioGraph = (cb: () => void): (() => void) => {
+  listeners.add(cb)
+  return () => { listeners.delete(cb) }
+}
+```
+
+- [ ] **Step 3: Commit**
 
 ```bash
-git add src/lib/client/audio-graph.ts
-git commit -m "feat(source): audio graph factory with pitch + volume"
+git add src/lib/client/audio-graph.ts src/lib/client/audio-graph-ref.ts
+git commit -m "feat(source): audio graph factory + module ref for volume control"
 ```
 
 ---
@@ -3068,36 +3189,48 @@ git commit -m "feat(source): token entry + start show gesture"
 Create `src/components/source/VideoPlayer.tsx`:
 ```tsx
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { buildAudioGraph, type AudioGraph } from '@/lib/client/audio-graph'
+import { setAudioGraph } from '@/lib/client/audio-graph-ref'
 import type { Connection } from '@/lib/client/ws'
-import type { PlayerState } from '@/lib/types/state'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
 
-export const VideoPlayer = ({ conn }: { conn: Connection }) => {
+export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceToken: string }) => {
   const mountRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<AudioGraph | null>(null)
   const lastEpochRef = useRef<number>(-1)
+  const [graphReady, setGraphReady] = useState(false)
   const player = conn.state?.player
 
-  // Mount audio graph once
+  // Mount audio graph once. Only after it's ready do we tell the server we're ready.
   useEffect(() => {
     let cancelled = false
     if (!mountRef.current) return
     buildAudioGraph(mountRef.current)
-      .then((g) => { if (cancelled) g.destroy(); else graphRef.current = g })
+      .then((g) => {
+        if (cancelled) { g.destroy(); return }
+        graphRef.current = g
+        setAudioGraph(g)
+        setGraphReady(true)
+        // Now safe to announce readiness — server can auto-advance.
+        conn.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken })
+      })
       .catch((e) => {
         console.error('Audio graph failed', e)
-        // Failure path: bypass not possible without graph; toast user
-        conn.send({ type: 'player.error', epoch: 0, itemId: '', message: 'audio init failed' } as any)
+        if (graphRef.current === null) setGraphReady(false)
       })
-    return () => { cancelled = true; graphRef.current?.destroy(); graphRef.current = null }
-  }, [])
+    return () => {
+      cancelled = true
+      setAudioGraph(null)
+      graphRef.current?.destroy()
+      graphRef.current = null
+    }
+  }, [conn, sourceToken])
 
   // Sync src and pitch with server-driven player state
   useEffect(() => {
     const g = graphRef.current
-    if (!g || !player) return
+    if (!g || !player || !graphReady) return
     if (player.status === 'idle') {
       g.video.pause(); g.video.removeAttribute('src'); g.video.load()
       lastEpochRef.current = player.epoch
@@ -3107,14 +3240,25 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
     if (player.epoch !== lastEpochRef.current) {
       lastEpochRef.current = player.epoch
       g.video.src = `/api/stream/${player.item.videoId}?e=${player.epoch}`
-      g.video.currentTime = player.positionSec
+      // Project the resume target: server's last positionSec + wall-clock since update.
+      const drift = (Date.now() - player.positionUpdatedAt) / 1000
+      const target = Math.min(
+        Math.max(0, player.positionSec + (player.status === 'playing' ? drift : 0)),
+        Math.max(0, player.item.durationSec - 0.5),
+      )
+      g.video.currentTime = target
       g.video.play().catch((e) => {
         conn.send({ type: 'player.error', epoch: player.epoch, itemId: player.item.id, message: String(e) })
       })
     }
     if (player.status === 'paused') g.video.pause()
     if (player.status === 'playing' && g.video.paused) void g.video.play()
-  }, [player?.status, (player && 'epoch' in player) ? player.epoch : -1, (player && 'livePitch' in player) ? player.livePitch : 0])
+  }, [
+    graphReady,
+    player?.status,
+    (player && 'epoch' in player) ? player.epoch : -1,
+    (player && 'livePitch' in player) ? player.livePitch : 0,
+  ])
 
   // Heartbeat
   useEffect(() => {
@@ -3188,10 +3332,13 @@ export const QrPanel = () => {
 Create `src/components/source/QueueOverlay.tsx`:
 ```tsx
 'use client'
+import { useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import { QrPanel } from './QrPanel'
+import { getAudioGraph } from '@/lib/client/audio-graph-ref'
 
 export const QueueOverlay = ({ conn }: { conn: Connection }) => {
+  const [volume, setVolume] = useState(0.9)
   const s = conn.state
   if (!s) return null
   const p = s.player
@@ -3203,6 +3350,10 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
     conn.send({ type: 'player.setLivePitch', msgId: crypto.randomUUID(), semitones: sem })
   const moveTop = (id: string) =>
     conn.send({ type: 'queue.move', msgId: crypto.randomUUID(), itemId: id, toIndex: 0 })
+  const onVolume = (v: number) => {
+    setVolume(v)
+    getAudioGraph()?.setVolume(v)
+  }
 
   return (
     <div style={{
@@ -3218,13 +3369,19 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
             <div className="uc" style={{ fontSize: 10, color: 'var(--riso-pink)' }}>▌ now playing</div>
             <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 28 }}>{p.item.title}</div>
             <div className="uc" style={{ fontSize: 11 }}>{p.item.queuedBy.name} · key {p.livePitch >= 0 ? '+' : ''}{p.livePitch} · {Math.floor(p.positionSec / 60)}:{String(Math.floor(p.positionSec) % 60).padStart(2, '0')}</div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center' }}>
               <button onClick={() => setLive(p.livePitch - 1)} className="uc">−</button>
               <span className="hanko">{p.livePitch >= 0 ? `+${p.livePitch}` : p.livePitch}</span>
               <button onClick={() => setLive(p.livePitch + 1)} className="uc">+</button>
               <button onClick={prev} className="uc">⏮</button>
               <button onClick={skip} className="uc">⏭</button>
               <button onClick={shuffle} className="uc">🔀</button>
+              <span className="uc" style={{ fontSize: 9, marginLeft: 12 }}>vol</span>
+              <input
+                type="range" min={0} max={1} step={0.01} value={volume}
+                onChange={(e) => onVolume(Number(e.target.value))}
+                style={{ width: 100 }}
+              />
             </div>
           </div>
         )}
@@ -3311,14 +3468,14 @@ export default function Source() {
   const conn = useConnection({ name: 'source', sourceToken: token || undefined })
 
   if (!token) return <TokenEntry onSubmit={setToken} />
-  if (!unlocked) return <StartShowGesture onClick={() => {
-    setUnlocked(true)
-    conn.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken: token })
-  }} />
+  if (!unlocked) return <StartShowGesture onClick={() => setUnlocked(true)} />
 
+  // Note: we DO NOT send `source.ready` here. VideoPlayer sends it after
+  // the AudioContext is unlocked and the AudioGraph has finished mounting,
+  // so the server only auto-advances once the source can actually play.
   return (
     <main style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: 'var(--ink-black)' }}>
-      <VideoPlayer conn={conn} />
+      <VideoPlayer conn={conn} sourceToken={token} />
       <QueueOverlay conn={conn} />
       <KeyboardShortcuts conn={conn} />
     </main>
@@ -3382,26 +3539,42 @@ export const buildAudioGraphNoPitch = async (mountEl: HTMLElement): Promise<Audi
 
 - [ ] **Step 2: Use the fallback when worklet load fails**
 
-In `VideoPlayer.tsx`, replace the mount effect with:
+In `VideoPlayer.tsx`, replace the mount effect with the worklet-then-bypass pattern. Update imports to include `buildAudioGraphNoPitch`. Note we still call `setAudioGraph(g)` and `source.ready` after either path resolves — the show must always be able to start, even without pitch.
+
 ```tsx
 useEffect(() => {
   let cancelled = false
   if (!mountRef.current) return
-  const tryWorklet = async () => {
+  const tryWorklet = async (): Promise<{ g: AudioGraph; bypassed: boolean }> => {
     try {
-      return await buildAudioGraph(mountRef.current!)
+      return { g: await buildAudioGraph(mountRef.current!), bypassed: false }
     } catch (e) {
       console.warn('Worklet failed, bypassing pitch', e)
-      conn.send({ type: 'player.error', epoch: 0, itemId: '', message: 'pitch shift unavailable — playing original key' } as any)
-      return await buildAudioGraphNoPitch(mountRef.current!)
+      return { g: await buildAudioGraphNoPitch(mountRef.current!), bypassed: true }
     }
   }
-  tryWorklet().then((g) => { if (cancelled) g.destroy(); else graphRef.current = g })
-  return () => { cancelled = true; graphRef.current?.destroy(); graphRef.current = null }
-}, [])
+  tryWorklet().then(({ g, bypassed }) => {
+    if (cancelled) { g.destroy(); return }
+    graphRef.current = g
+    setAudioGraph(g)
+    setGraphReady(true)
+    conn.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken })
+    if (bypassed) {
+      // Inform everyone — server will broadcast as a toast.
+      conn.send({
+        type: 'player.error', epoch: 0, itemId: '',
+        message: 'Pitch shift unavailable — playing original key',
+      } as any)
+    }
+  })
+  return () => {
+    cancelled = true
+    setAudioGraph(null)
+    graphRef.current?.destroy()
+    graphRef.current = null
+  }
+}, [conn, sourceToken])
 ```
-
-Update import to include `buildAudioGraphNoPitch`.
 
 - [ ] **Step 3: Commit**
 
