@@ -12,6 +12,14 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
   const [graphReady, setGraphReady] = useState(false)
   const player = conn.state?.player
 
+  // `conn` is a fresh object every render (from useConnection's return) and would re-fire any
+  // effect that listed it as a dep. We funnel current state/send through a ref so the
+  // mount/heartbeat/ended effects can stay stable.
+  const connRef = useRef(conn)
+  useEffect(() => { connRef.current = conn })
+
+  // Mount the audio graph exactly once per `sourceToken`. Strict-mode double-effect handled
+  // via the `cancelled` flag: if we tear down before the async build resolves, destroy on arrival.
   useEffect(() => {
     let cancelled = false
     if (!mountRef.current) return
@@ -23,26 +31,31 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
         return { g: await buildAudioGraphNoPitch(mountRef.current!), bypassed: true }
       }
     }
-    tryWorklet().then(({ g, bypassed }) => {
-      if (cancelled) { g.destroy(); return }
-      graphRef.current = g
-      setAudioGraph(g)
-      setGraphReady(true)
-      conn.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken })
-      if (bypassed) {
-        conn.send({
-          type: 'player.error', epoch: 0, itemId: '',
-          message: 'Pitch shift unavailable — playing original key',
-        } as any)
-      }
-    })
+    tryWorklet()
+      .then(({ g, bypassed }) => {
+        if (cancelled) { g.destroy(); return }
+        graphRef.current = g
+        setAudioGraph(g)
+        setGraphReady(true)
+        connRef.current.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken })
+        if (bypassed) {
+          connRef.current.send({
+            type: 'player.error', epoch: 0, itemId: '',
+            message: 'Pitch shift unavailable — playing original key',
+          } as any)
+        }
+      })
+      .catch((e) => {
+        console.error('Audio graph init failed (no fallback worked)', e)
+      })
     return () => {
       cancelled = true
       setAudioGraph(null)
       graphRef.current?.destroy()
       graphRef.current = null
+      setGraphReady(false)
     }
-  }, [conn, sourceToken])
+  }, [sourceToken])
 
   // Sync src and pitch with server-driven player state
   useEffect(() => {
@@ -65,7 +78,7 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
       )
       g.video.currentTime = target
       g.video.play().catch((e) => {
-        conn.send({ type: 'player.error', epoch: player.epoch, itemId: player.item.id, message: String(e) })
+        connRef.current.send({ type: 'player.error', epoch: player.epoch, itemId: player.item.id, message: String(e) })
       })
     }
     if (player.status === 'paused') g.video.pause()
@@ -77,28 +90,29 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
     (player && 'livePitch' in player) ? player.livePitch : 0,
   ])
 
-  // Heartbeat
+  // Heartbeat — runs once, reads latest conn via ref.
   useEffect(() => {
     const id = setInterval(() => {
       const g = graphRef.current
-      const p = conn.state?.player
+      const p = connRef.current.state?.player
       if (!g || !p || p.status === 'idle') return
-      conn.send({ type: 'player.position', epoch: p.epoch, positionSec: g.video.currentTime })
+      connRef.current.send({ type: 'player.position', epoch: p.epoch, positionSec: g.video.currentTime })
     }, POSITION_HEARTBEAT_MS)
     return () => clearInterval(id)
-  }, [conn])
+  }, [])
 
-  // Ended event
+  // Ended event — re-attaches once the graph is ready (graph.video exists then).
   useEffect(() => {
+    if (!graphReady) return
     const g = graphRef.current
     if (!g) return
     const onEnded = () => {
-      const p = conn.state?.player
-      if (p && p.status !== 'idle') conn.send({ type: 'player.ended', epoch: p.epoch })
+      const p = connRef.current.state?.player
+      if (p && p.status !== 'idle') connRef.current.send({ type: 'player.ended', epoch: p.epoch })
     }
     g.video.addEventListener('ended', onEnded)
     return () => g.video.removeEventListener('ended', onEnded)
-  }, [conn, graphRef.current])
+  }, [graphReady])
 
   return <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
 }
