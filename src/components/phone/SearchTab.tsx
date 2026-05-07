@@ -1,9 +1,11 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { SearchResult } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
 import { PrePitchSlider } from './PrePitchSlider'
+
+const REQUEST_TIMEOUT_MS = 8000
 
 export const SearchTab = ({ conn }: { conn: Connection }) => {
   const [q, setQ] = useState('')
@@ -11,9 +13,14 @@ export const SearchTab = ({ conn }: { conn: Connection }) => {
   const [pending, setPending] = useState<SearchResult | null>(null)
   const [pitch, setPitch] = useState(0)
   const [loading, setLoading] = useState(false)
+  const cleanupRef = useRef<(() => void) | null>(null)
+
+  // Always tear down any in-flight listener on unmount.
+  useEffect(() => () => cleanupRef.current?.(), [])
 
   const doSearch = () => {
     if (!q.trim()) return
+    cleanupRef.current?.() // cancel any previous in-flight search
     setLoading(true)
     const msgId = crypto.randomUUID()
     const handler = (e: Event) => {
@@ -21,9 +28,19 @@ export const SearchTab = ({ conn }: { conn: Connection }) => {
       if (m.type === 'search.results' && m.msgId === msgId) {
         setResults(m.results)
         setLoading(false)
-        window.removeEventListener('karaoke-msg', handler)
+        cleanup()
       }
     }
+    const timeout = setTimeout(() => {
+      setLoading(false)
+      cleanup()
+    }, REQUEST_TIMEOUT_MS)
+    const cleanup = () => {
+      window.removeEventListener('karaoke-msg', handler)
+      clearTimeout(timeout)
+      if (cleanupRef.current === cleanup) cleanupRef.current = null
+    }
+    cleanupRef.current = cleanup
     window.addEventListener('karaoke-msg', handler)
     conn.send({ type: 'search', msgId, query: q.trim() })
   }

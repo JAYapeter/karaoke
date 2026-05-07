@@ -5,6 +5,7 @@ import { StartShowGesture } from '@/components/source/StartShowGesture'
 import { VideoPlayer } from '@/components/source/VideoPlayer'
 import { QueueOverlay } from '@/components/source/QueueOverlay'
 import { KeyboardShortcuts } from '@/components/source/KeyboardShortcuts'
+import { Toaster } from '@/components/shared/Toaster'
 import { getStoredSourceToken, useConnection } from '@/lib/client/ws'
 
 export default function Source() {
@@ -22,6 +23,7 @@ export default function Source() {
       <VideoPlayer conn={conn} sourceToken={token} />
       <QueueOverlay conn={conn} />
       <KeyboardShortcuts conn={conn} />
+      <Toaster />
     </main>
   )
 }

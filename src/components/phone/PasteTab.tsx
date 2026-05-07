@@ -1,9 +1,10 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import { PrePitchSlider } from './PrePitchSlider'
 
 const VIDEO_ID = /(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/
+const REQUEST_TIMEOUT_MS = 12000
 
 export const PasteTab = ({ conn }: { conn: Connection }) => {
   const [url, setUrl] = useState('')
@@ -11,20 +12,33 @@ export const PasteTab = ({ conn }: { conn: Connection }) => {
   const [pitch, setPitch] = useState(0)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  const cleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => () => cleanupRef.current?.(), [])
 
   const resolve = () => {
     const m = url.match(VIDEO_ID); if (!m) { setErr('Could not find a YouTube video id in that URL.'); return }
+    cleanupRef.current?.()
     setBusy(true); setErr(null)
     const msgId = crypto.randomUUID()
     const handler = (e: Event) => {
       const x = (e as CustomEvent).detail
       if (x.type === 'meta.result' && x.msgId === msgId) {
         setMeta({ videoId: x.videoId, title: x.title, thumbnail: x.thumbnail, durationSec: x.durationSec })
-        setBusy(false); window.removeEventListener('karaoke-msg', handler)
+        setBusy(false); cleanup()
       } else if (x.type === 'state.ack' && x.msgId === msgId && !x.ok) {
-        setErr(x.error ?? 'failed'); setBusy(false); window.removeEventListener('karaoke-msg', handler)
+        setErr(x.error ?? 'failed'); setBusy(false); cleanup()
       }
     }
+    const timeout = setTimeout(() => {
+      setBusy(false); setErr('Timed out waiting for YouTube metadata.'); cleanup()
+    }, REQUEST_TIMEOUT_MS)
+    const cleanup = () => {
+      window.removeEventListener('karaoke-msg', handler)
+      clearTimeout(timeout)
+      if (cleanupRef.current === cleanup) cleanupRef.current = null
+    }
+    cleanupRef.current = cleanup
     window.addEventListener('karaoke-msg', handler)
     conn.send({ type: 'meta.fetch', msgId, videoId: m[1]! })
   }

@@ -10,6 +10,7 @@ import { Store } from './src/lib/server/store'
 import { Dispatcher, createIdempotencyState, type IO } from './src/lib/server/dispatch'
 import type { ClientMessage, ServerMessage } from './src/lib/types/protocol'
 import { log } from './src/lib/log'
+import { runYtDlp } from './src/lib/ytdlp/runner'
 
 const dev = process.env.NODE_ENV !== 'production'
 const app = next({ dev })
@@ -56,6 +57,15 @@ const lanIp = (): string => {
     }
   }
   return '127.0.0.1'
+}
+
+const checkYtDlp = async () => {
+  try {
+    const v = await runYtDlp(['--version'], { timeoutMs: 4000 })
+    log('info', `yt-dlp ready: ${v.trim()}`)
+  } catch {
+    log('warn', 'yt-dlp not found on PATH — search and stream extraction will fail. Install with `brew install yt-dlp`.')
+  }
 }
 
 const printBanner = async () => {
@@ -114,5 +124,6 @@ app.prepare().then(() => {
 
   server.listen(PORT, () => {
     void printBanner()
+    void checkYtDlp()
   })
 })

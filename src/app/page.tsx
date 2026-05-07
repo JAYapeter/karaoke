@@ -5,6 +5,7 @@ import { QueueView } from '@/components/phone/QueueView'
 import { SearchTab } from '@/components/phone/SearchTab'
 import { PasteTab } from '@/components/phone/PasteTab'
 import { LivePitchSheet } from '@/components/phone/LivePitchSheet'
+import { Toaster } from '@/components/shared/Toaster'
 import { getSessionId, getStoredName, useConnection } from '@/lib/client/ws'
 
 type Tab = 'queue' | 'search' | 'paste'
@@ -39,6 +40,7 @@ export default function Phone() {
       {tab === 'paste' && <PasteTab conn={conn} />}
 
       <LivePitchSheet conn={conn} sessionId={sessionId} />
+      <Toaster />
     </main>
   )
 }

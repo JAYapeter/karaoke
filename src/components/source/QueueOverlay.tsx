@@ -12,6 +12,8 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
 
   const skip = () => conn.send({ type: 'player.skip', msgId: crypto.randomUUID(), epoch: p.epoch })
   const prev = () => conn.send({ type: 'player.prev', msgId: crypto.randomUUID(), epoch: p.epoch })
+  const togglePause = () =>
+    conn.send({ type: p.status === 'paused' ? 'player.play' : 'player.pause', msgId: crypto.randomUUID() })
   const shuffle = () => conn.send({ type: 'queue.shuffle', msgId: crypto.randomUUID() })
   const setLive = (sem: number) =>
     conn.send({ type: 'player.setLivePitch', msgId: crypto.randomUUID(), semitones: sem })
@@ -51,6 +53,9 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
               <span className="hanko">{p.livePitch >= 0 ? `+${p.livePitch}` : p.livePitch}</span>
               <button onClick={() => setLive(p.livePitch + 1)} className="uc">+</button>
               <button onClick={prev} className="uc">⏮</button>
+              <button onClick={togglePause} className="uc" aria-label={p.status === 'paused' ? 'Play' : 'Pause'}>
+                {p.status === 'paused' ? '▶' : '⏸'}
+              </button>
               <button onClick={skip} className="uc">⏭</button>
               <button onClick={shuffle} className="uc">🔀</button>
               <span className="uc" style={{ fontSize: 9, marginLeft: 12 }}>vol</span>
