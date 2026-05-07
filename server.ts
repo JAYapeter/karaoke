@@ -81,7 +81,19 @@ const printBanner = async () => {
 
 app.prepare().then(() => {
   const server = createServer((req, res) => handle(req, res, parse(req.url ?? '/', true)))
-  const wss = new WebSocketServer({ server, path: '/ws' })
+  // noServer: we manually route upgrades so Turbopack HMR (/_next/webpack-hmr)
+  // can pass through to Next's own upgrade handler.
+  const wss = new WebSocketServer({ noServer: true })
+  const nextUpgrade = app.getUpgradeHandler()
+
+  server.on('upgrade', (req, socket, head) => {
+    const path = (req.url ?? '/').split('?')[0]
+    if (path === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req))
+    } else {
+      void nextUpgrade(req, socket, head)
+    }
+  })
 
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url ?? '/ws', 'http://x')
