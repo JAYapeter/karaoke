@@ -22,6 +22,16 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
     getAudioGraph()?.setVolume(v)
   }
 
+  if (s.player.status === 'idle' && s.queue.length === 0) {
+    return (
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 24, pointerEvents: 'auto' }}>
+        <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 96, letterSpacing: -2 }}>下北沢</div>
+        <div className="uc" style={{ fontSize: 14, color: 'var(--cigarette)' }}>house lights on — scan to add the first song</div>
+        <QrPanel />
+      </div>
+    )
+  }
+
   return (
     <div style={{
       position: 'absolute', inset: 0, display: 'grid',
