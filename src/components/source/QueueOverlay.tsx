@@ -5,7 +5,9 @@ import { QrPanel } from './QrPanel'
 import { getAudioGraph } from '@/lib/client/audio-graph-ref'
 
 export const QueueOverlay = ({ conn }: { conn: Connection }) => {
-  const [volume, setVolume] = useState(0.9)
+  // Initial volume must match the GainNode's default (1.0) so the slider position
+  // truthfully represents the actual gain at first render.
+  const [volume, setVolume] = useState(1)
   const s = conn.state
   if (!s) return null
   const p = s.player

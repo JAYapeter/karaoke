@@ -9,10 +9,10 @@ export type AudioGraph = {
   destroy: () => void
 }
 
-const semitoneToRatio = (s: number) => Math.pow(2, s / 12)
-
 export const buildAudioGraph = async (mountEl: HTMLElement): Promise<AudioGraph> => {
+  // Resume *before* the async worklet load, so the user-activation token is still valid.
   const ctx = new AudioContext()
+  if (ctx.state === 'suspended') await ctx.resume()
   await ctx.audioWorklet.addModule('/worklets/soundtouch-worklet.js')
   if (ctx.state === 'suspended') await ctx.resume()
 
@@ -25,7 +25,14 @@ export const buildAudioGraph = async (mountEl: HTMLElement): Promise<AudioGraph>
   mountEl.appendChild(video)
 
   const src = ctx.createMediaElementSource(video)
-  const worklet = new AudioWorkletNode(ctx, 'soundtouch-processor')
+  // Stereo output is REQUIRED here: without `outputChannelCount: [2]`, some browsers
+  // (and the SoundTouch worklet's internal stereo-write expectation) silence the output.
+  // Matches the official @soundtouchjs/audio-worklet `SoundTouchNode` constructor.
+  const worklet = new AudioWorkletNode(ctx, 'soundtouch-processor', {
+    numberOfInputs: 1,
+    numberOfOutputs: 1,
+    outputChannelCount: [2],
+  })
   const gain = ctx.createGain()
   src.connect(worklet)
   worklet.connect(gain)
@@ -35,8 +42,10 @@ export const buildAudioGraph = async (mountEl: HTMLElement): Promise<AudioGraph>
 
   const setPitch = (semitones: number) => {
     if (bypassed) return
-    const param = (worklet.parameters as Map<string, AudioParam>).get('pitch')
-    if (param) param.value = semitoneToRatio(semitones)
+    // Use the worklet's native semitone parameter instead of converting via `pitch` —
+    // gives integer-step musical key changes with no rounding error.
+    const param = (worklet.parameters as Map<string, AudioParam>).get('pitchSemitones')
+    if (param) param.value = semitones
   }
 
   const bypassPitch = () => {
