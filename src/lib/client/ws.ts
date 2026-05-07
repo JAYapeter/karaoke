@@ -73,6 +73,9 @@ export const useConnection = (opts: {
           if (r) { r({ ok: msg.ok, ...(msg.error ? { error: msg.error } : {}) }); ackResolversRef.current.delete(msg.msgId) }
         }
         onMessage?.(msg)
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('karaoke-msg', { detail: msg }))
+        }
       })
       ws.addEventListener('close', () => {
         setReady(false)
