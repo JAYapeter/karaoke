@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { buildAudioGraph, type AudioGraph } from '@/lib/client/audio-graph'
+import { buildAudioGraph, buildAudioGraphNoPitch, type AudioGraph } from '@/lib/client/audio-graph'
 import { setAudioGraph } from '@/lib/client/audio-graph-ref'
 import type { Connection } from '@/lib/client/ws'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
@@ -12,23 +12,30 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
   const [graphReady, setGraphReady] = useState(false)
   const player = conn.state?.player
 
-  // Mount audio graph once. Only after it's ready do we tell the server we're ready.
   useEffect(() => {
     let cancelled = false
     if (!mountRef.current) return
-    buildAudioGraph(mountRef.current)
-      .then((g) => {
-        if (cancelled) { g.destroy(); return }
-        graphRef.current = g
-        setAudioGraph(g)
-        setGraphReady(true)
-        // Now safe to announce readiness — server can auto-advance.
-        conn.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken })
-      })
-      .catch((e) => {
-        console.error('Audio graph failed', e)
-        if (graphRef.current === null) setGraphReady(false)
-      })
+    const tryWorklet = async (): Promise<{ g: AudioGraph; bypassed: boolean }> => {
+      try {
+        return { g: await buildAudioGraph(mountRef.current!), bypassed: false }
+      } catch (e) {
+        console.warn('Worklet failed, bypassing pitch', e)
+        return { g: await buildAudioGraphNoPitch(mountRef.current!), bypassed: true }
+      }
+    }
+    tryWorklet().then(({ g, bypassed }) => {
+      if (cancelled) { g.destroy(); return }
+      graphRef.current = g
+      setAudioGraph(g)
+      setGraphReady(true)
+      conn.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken })
+      if (bypassed) {
+        conn.send({
+          type: 'player.error', epoch: 0, itemId: '',
+          message: 'Pitch shift unavailable — playing original key',
+        } as any)
+      }
+    })
     return () => {
       cancelled = true
       setAudioGraph(null)

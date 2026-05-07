@@ -54,3 +54,23 @@ export const buildAudioGraph = async (mountEl: HTMLElement): Promise<AudioGraph>
     destroy: () => { try { ctx.close() } catch {} mountEl.removeChild(video) },
   }
 }
+
+export const buildAudioGraphNoPitch = async (mountEl: HTMLElement): Promise<AudioGraph> => {
+  const ctx = new AudioContext()
+  if (ctx.state === 'suspended') await ctx.resume()
+  const video = document.createElement('video')
+  video.playsInline = true
+  video.style.width = '100%'; video.style.height = '100%'
+  video.style.objectFit = 'contain'; video.style.background = 'black'
+  mountEl.appendChild(video)
+  const src = ctx.createMediaElementSource(video)
+  const gain = ctx.createGain()
+  src.connect(gain); gain.connect(ctx.destination)
+  return {
+    ctx, video,
+    setPitch: () => {},
+    setVolume: (v) => { gain.gain.value = Math.max(0, Math.min(1, v)) },
+    bypassPitch: () => {},
+    destroy: () => { try { ctx.close() } catch {} mountEl.removeChild(video) },
+  }
+}
