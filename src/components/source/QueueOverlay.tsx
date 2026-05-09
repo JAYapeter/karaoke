@@ -1,4 +1,5 @@
 'use client'
+import { randomUUID } from '@/lib/client/uuid'
 import { useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import { QrPanel } from './QrPanel'
@@ -12,15 +13,15 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
   if (!s) return null
   const p = s.player
 
-  const skip = () => conn.send({ type: 'player.skip', msgId: crypto.randomUUID(), epoch: p.epoch })
-  const prev = () => conn.send({ type: 'player.prev', msgId: crypto.randomUUID(), epoch: p.epoch })
+  const skip = () => conn.send({ type: 'player.skip', msgId: randomUUID(), epoch: p.epoch })
+  const prev = () => conn.send({ type: 'player.prev', msgId: randomUUID(), epoch: p.epoch })
   const togglePause = () =>
-    conn.send({ type: p.status === 'paused' ? 'player.play' : 'player.pause', msgId: crypto.randomUUID() })
-  const shuffle = () => conn.send({ type: 'queue.shuffle', msgId: crypto.randomUUID() })
+    conn.send({ type: p.status === 'paused' ? 'player.play' : 'player.pause', msgId: randomUUID() })
+  const shuffle = () => conn.send({ type: 'queue.shuffle', msgId: randomUUID() })
   const setLive = (sem: number) =>
-    conn.send({ type: 'player.setLivePitch', msgId: crypto.randomUUID(), semitones: sem })
+    conn.send({ type: 'player.setLivePitch', msgId: randomUUID(), semitones: sem })
   const moveTop = (id: string) =>
-    conn.send({ type: 'queue.move', msgId: crypto.randomUUID(), itemId: id, toIndex: 0 })
+    conn.send({ type: 'queue.move', msgId: randomUUID(), itemId: id, toIndex: 0 })
   const onVolume = (v: number) => {
     setVolume(v)
     getAudioGraph()?.setVolume(v)
@@ -79,7 +80,7 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="uc" onClick={() => moveTop(it.id)}>⤴</button>
-              <button className="uc" onClick={() => conn.send({ type: 'queue.remove', msgId: crypto.randomUUID(), itemId: it.id })}>✕</button>
+              <button className="uc" onClick={() => conn.send({ type: 'queue.remove', msgId: randomUUID(), itemId: it.id })}>✕</button>
             </div>
           </div>
         ))}

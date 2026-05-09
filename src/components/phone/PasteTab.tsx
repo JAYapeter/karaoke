@@ -1,4 +1,5 @@
 'use client'
+import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import { PrePitchSlider } from './PrePitchSlider'
@@ -20,7 +21,7 @@ export const PasteTab = ({ conn }: { conn: Connection }) => {
     const m = url.match(VIDEO_ID); if (!m) { setErr('Could not find a YouTube video id in that URL.'); return }
     cleanupRef.current?.()
     setBusy(true); setErr(null)
-    const msgId = crypto.randomUUID()
+    const msgId = randomUUID()
     const handler = (e: Event) => {
       const x = (e as CustomEvent).detail
       if (x.type === 'meta.result' && x.msgId === msgId) {
@@ -58,7 +59,7 @@ export const PasteTab = ({ conn }: { conn: Connection }) => {
           <PrePitchSlider value={pitch} onChange={setPitch} />
           <button
             onClick={() => {
-              conn.send({ type: 'queue.add', msgId: crypto.randomUUID(), videoId: meta.videoId, prePitch: pitch })
+              conn.send({ type: 'queue.add', msgId: randomUUID(), videoId: meta.videoId, prePitch: pitch })
               setMeta(null); setUrl('')
             }}
             className="uc" style={{ marginTop: 8, padding: '6px 10px', background: 'var(--hanko-red)', color: 'var(--paper-cream)' }}

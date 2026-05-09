@@ -1,4 +1,5 @@
 'use client'
+import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import type { ClientMessage, ServerMessage } from '@/lib/types/protocol'
 import type { ServerState } from '@/lib/types/state'
@@ -11,7 +12,7 @@ export const getSessionId = () => {
   if (typeof window === 'undefined') return ''
   let id = localStorage.getItem(SESSION_KEY)
   if (!id) {
-    id = crypto.randomUUID()
+    id = randomUUID()
     localStorage.setItem(SESSION_KEY, id)
   }
   return id
@@ -56,7 +57,7 @@ export const useConnection = (opts: {
         setReady(true)
         ws.send(JSON.stringify({
           type: 'join',
-          msgId: crypto.randomUUID(),
+          msgId: randomUUID(),
           sessionId,
           name: opts.name,
           ...(opts.sourceToken ? { sourceToken: opts.sourceToken } : {}),

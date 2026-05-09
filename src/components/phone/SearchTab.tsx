@@ -1,4 +1,5 @@
 'use client'
+import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { SearchResult } from '@/lib/types/state'
@@ -22,7 +23,7 @@ export const SearchTab = ({ conn }: { conn: Connection }) => {
     if (!q.trim()) return
     cleanupRef.current?.() // cancel any previous in-flight search
     setLoading(true)
-    const msgId = crypto.randomUUID()
+    const msgId = randomUUID()
     const handler = (e: Event) => {
       const m = (e as CustomEvent<ServerMessage>).detail
       if (m.type === 'search.results' && m.msgId === msgId) {
@@ -70,7 +71,7 @@ export const SearchTab = ({ conn }: { conn: Connection }) => {
             <button onClick={() => setPending(null)} className="uc" style={{ padding: '6px 10px' }}>Cancel</button>
             <button
               onClick={() => {
-                conn.send({ type: 'queue.add', msgId: crypto.randomUUID(), videoId: pending.videoId, prePitch: pitch })
+                conn.send({ type: 'queue.add', msgId: randomUUID(), videoId: pending.videoId, prePitch: pitch })
                 setPending(null); setQ(''); setResults([])
               }}
               className="uc" style={{ padding: '6px 10px', background: 'var(--hanko-red)', color: 'var(--paper-cream)' }}

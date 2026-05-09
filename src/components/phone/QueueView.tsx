@@ -1,4 +1,5 @@
 'use client'
+import { randomUUID } from '@/lib/client/uuid'
 import type { Connection } from '@/lib/client/ws'
 import type { QueueItem, PlayerState } from '@/lib/types/state'
 
@@ -7,7 +8,7 @@ export const QueueView = ({ conn, sessionId }: { conn: Connection; sessionId: st
   if (!state) return <div className="uc" style={{ padding: 16 }}>Connecting…</div>
 
   const remove = (it: QueueItem) =>
-    conn.send({ type: 'queue.remove', msgId: crypto.randomUUID(), itemId: it.id })
+    conn.send({ type: 'queue.remove', msgId: randomUUID(), itemId: it.id })
 
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>

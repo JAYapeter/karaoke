@@ -1,4 +1,5 @@
 'use client'
+import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { PlayerState } from '@/lib/types/state'
@@ -29,7 +30,7 @@ export const LivePitchSheet = ({ conn, sessionId }: { conn: Connection; sessionI
           type="range" min={-6} max={6} step={1} value={pitch}
           onChange={(e) => {
             const v = Number(e.target.value); setPitch(v)
-            conn.send({ type: 'player.setLivePitch', msgId: crypto.randomUUID(), semitones: v })
+            conn.send({ type: 'player.setLivePitch', msgId: randomUUID(), semitones: v })
           }}
           style={{ width: '100%' }}
         />

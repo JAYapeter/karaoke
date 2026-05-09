@@ -1,4 +1,5 @@
 'use client'
+import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useRef, useState } from 'react'
 import { buildAudioGraph, buildAudioGraphNoPitch, type AudioGraph } from '@/lib/client/audio-graph'
 import { setAudioGraph } from '@/lib/client/audio-graph-ref'
@@ -37,7 +38,7 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
         graphRef.current = g
         setAudioGraph(g)
         setGraphReady(true)
-        connRef.current.send({ type: 'source.ready', msgId: crypto.randomUUID(), sourceToken })
+        connRef.current.send({ type: 'source.ready', msgId: randomUUID(), sourceToken })
         if (bypassed) {
           connRef.current.send({
             type: 'player.error', epoch: 0, itemId: '',
