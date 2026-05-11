@@ -29,54 +29,34 @@
 
 ---
 
-## Phase 0 — Spec sync
+## Phase 0 — Preamble (no-op verification)
 
-### Task 1: Reflect the TokenEntry removal in the redesign spec
+### Task 1: Acknowledge the TokenEntry removal
 
-**Files:**
-- Modify: `docs/superpowers/specs/2026-05-08-karaoke-ui-redesign-design.md`
+**Files:** none — verification only.
 
-**Context:** Commit `52e037a` removed the `TokenEntry` component and its surrounding flow (localhost auto-trusts the source). The redesign spec was written before that change and still references TokenEntry in three places: §3.4 (pre-show states), §5.4 (tap-target matrix row), and §6 (component change table). The plan downstream skips all TokenEntry work; this task makes the spec match.
+**Context:** Commit `52e037a` removed the `TokenEntry` component and its flow before this plan was written (localhost now auto-trusts the source). The redesign spec was written before that change and still mentions TokenEntry in §3.4 (pre-show states), §5.4 (tap-target matrix), §5.6 (selectors), and §6 (component matrix). **This plan does not amend the spec** — the spec stays as written and any TokenEntry references in it are obsolete by user direction. Downstream tasks in this plan also do not implement TokenEntry; the source page renders only the non-localhost guard, `StartShowGesture`, and the running show.
 
-- [ ] **Step 1: Update §3.4 (pre-show states)**
+If at any point a future task seems to ask for TokenEntry work, treat that as a spec-out-of-date signal and skip it. The relevant spec rows to ignore:
 
-Replace the §3.4 block in the spec with:
+- §3.4 "Pre-show states (token entry, ...)" — only the StartShowGesture half applies; treat the TokenEntry half as removed.
+- §5.4 tap-target matrix row `TokenEntry submit` — N/A.
+- §5.6 `.token-entry,` entries in the `.page-root, …` and `.token-entry, .start-show-gesture, …` selectors — `.token-entry` no longer applies; the riso.css rewrite in Task 2 already omits it.
+- §6 component matrix row `src/components/source/TokenEntry.tsx` — N/A.
 
-```markdown
-### 3.4 Pre-show state ("▶ Start show" gesture)
-
-Token entry was removed in commit `52e037a` — the source page is always opened on the host machine, and the server now auto-trusts loopback WebSocket connections. The only remaining pre-show state on `/source` is:
-
-- **"▶ Start show" gesture** — unchanged. Full-screen black button with cream Crimson Pro italic. Safe-area + 100dvh applied directly on the button per §5.4 (it is its own page root). See `StartShowGesture.tsx` row in §6.
-- Loaded from a non-localhost origin, `/source` shows a one-card "open this on the host machine" message instead of the gesture. The card is upright (no rotation), styled like other paper-card surfaces.
-```
-
-- [ ] **Step 2: Update §5.4 tap-target matrix**
-
-Remove the `TokenEntry submit | 48 | 32 | .hit-target` row. The row directly above it (`StartShowGesture button`) stays unchanged.
-
-- [ ] **Step 3: Update §6 component matrix**
-
-Delete the entire `src/components/source/TokenEntry.tsx` row from the table. The row immediately below it (`src/components/phone/QueueView.tsx`) stays.
-
-- [ ] **Step 4: Update the §5.4 safe-area ownership table**
-
-Replace the row `/source token entry, start-show gesture, idle splash` with `/source start-show gesture, idle splash` (drop the `.token-entry` selector from the example). Also remove `.token-entry,` from the §5.6 selector list in the `.page-root, .phone-root, .youre-up, ...` rule and from the `.token-entry, .start-show-gesture, ...` safe-area-owner rule.
-
-- [ ] **Step 5: Commit**
+- [ ] **Step 1: Verify the removal is already in place**
 
 ```bash
-git add docs/superpowers/specs/2026-05-08-karaoke-ui-redesign-design.md
-git commit -m "$(cat <<'EOF'
-docs(spec): reflect TokenEntry removal in UI redesign spec
-
-Commit 52e037a deleted TokenEntry; the source page now auto-trusts
-localhost WS connections. Sync §3.4, §5.4, §5.6, and §6 to match.
-
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
-EOF
-)"
+test ! -f /Users/jonathanyapeter/Documents/Karaoke\ App/src/components/source/TokenEntry.tsx \
+  && echo "OK: TokenEntry already removed" \
+  || echo "WARN: TokenEntry still exists — re-check commit 52e037a"
 ```
+
+Expected: `OK: TokenEntry already removed`. If it prints `WARN`, stop and reconcile manually before proceeding.
+
+- [ ] **Step 2: No commit**
+
+This task touches no files; nothing to commit.
 
 ---
 
@@ -795,13 +775,19 @@ export const sumOccluderHeights = (heights: Array<number | null>): number => {
 }
 
 // §5.6 single-writer rule. Pass an array of refs to elements that occlude the
-// top of the phone-root viewport (Tabs, OfflineBanner, PendingAddsTray). The
-// hook attaches a ResizeObserver to each currently-mounted element, recomputes
-// the total via getBoundingClientRect() on every change, and writes to
-// :root --top-occluder-height. On every recompute we read fresh refs, so the
-// add/subtract drift bug from incremental updates is structurally impossible.
-export const useTopOccluderHeight = (refs: ReadonlyArray<RefObject<HTMLElement | null>>) => {
-  // Stable identity for the observers across renders.
+// top of the phone-root viewport (Tabs, OfflineBanner, PendingAddsTray). Also
+// pass a `mountVersion` integer that the caller bumps whenever an occluder
+// mounts or unmounts — the hook re-observes when the version changes. We
+// can't depend on `refs.length` alone because in practice callers pass a
+// fixed-length array of refs whose `.current` toggles between an element and
+// null as components mount/unmount; the array length never changes.
+//
+// On every recompute we read fresh refs and sum from DOM, so the add/subtract
+// drift bug from incremental updates is structurally impossible.
+export const useTopOccluderHeight = (
+  refs: ReadonlyArray<RefObject<HTMLElement | null>>,
+  mountVersion: number,
+) => {
   const refsRef = useRef(refs)
   refsRef.current = refs
 
@@ -819,7 +805,6 @@ export const useTopOccluderHeight = (refs: ReadonlyArray<RefObject<HTMLElement |
       document.documentElement.style.setProperty('--top-occluder-height', `${total}px`)
     }
 
-    // Recompute now (covers initial mount, ref-set timing) and on resize.
     recompute()
 
     const ros = refsRef.current
@@ -831,16 +816,16 @@ export const useTopOccluderHeight = (refs: ReadonlyArray<RefObject<HTMLElement |
         return ro
       })
 
-    // Cover window resize / address-bar collapse explicitly — RO does not fire
-    // for viewport-relative size changes on iOS.
     window.addEventListener('resize', recompute)
 
     return () => {
       for (const ro of ros) ro.disconnect()
       window.removeEventListener('resize', recompute)
     }
-    // Re-run when the ref array length changes (occluder mounts/unmounts).
-  }, [refs.length])
+    // Re-run on every mount/unmount of an occluder. `mountVersion` is the
+    // explicit signal because `refs.length` doesn't change when refs are
+    // stable and only their `.current` toggles between an element and null.
+  }, [mountVersion])
 }
 ```
 
@@ -873,7 +858,7 @@ EOF
 **Files:**
 - Create: `src/components/phone/Tabs.tsx`
 
-**Context:** §4.1 preserves the structure but extracts the header + tab strip as a sticky component. It's **read-only** with respect to `--top-occluder-height` (the PhoneRoot hook in Task 7 owns the measurement). Tabs renders the `●  NAME · ⚙` left block and the `[QUEUE] [SEARCH] [PASTE]` right block, applies `.tabs` (which owns `safe-area-inset-top`), and forwards a ref so the PhoneRoot hook can measure it.
+**Context:** §4.1 preserves the structure but extracts the header + tab strip as a sticky component. Tabs renders the `●  NAME · ⚙` left block and the `[QUEUE] [SEARCH] [PASTE]` right block, applies `.tabs` (which owns `safe-area-inset-top`), and forwards a ref so the PhoneRoot occluder hook can measure it. Tabs also owns its own `--tabs-height` writer (the spec §5.6 default in riso.css is a guess; the component overwrites it from its measured height on mount and on every resize). The `--top-occluder-height` sum is computed elsewhere in PhoneRoot.
 
 - [ ] **Step 1: Create the component**
 
@@ -881,7 +866,7 @@ EOF
 
 ```tsx
 'use client'
-import { forwardRef } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 
 export type Tab = 'queue' | 'search' | 'paste'
 
@@ -894,13 +879,43 @@ export type TabsProps = {
   queueBadge?: number
 }
 
+// Self-writes :root --tabs-height from its measured height. Without this the
+// PhoneRoot occluder math would use the riso.css default (an estimate); the
+// real height varies with notched-vs-non-notched iPhones, landscape, and
+// localized name strings.
+const useWriteTabsHeight = (target: HTMLElement | null) => {
+  useEffect(() => {
+    if (!target || typeof window === 'undefined') return
+    const write = () => {
+      const h = target.getBoundingClientRect().height
+      document.documentElement.style.setProperty('--tabs-height', `${Math.round(h)}px`)
+    }
+    write()
+    const ro = new ResizeObserver(write)
+    ro.observe(target)
+    window.addEventListener('resize', write)
+    return () => { ro.disconnect(); window.removeEventListener('resize', write) }
+  }, [target])
+}
+
 export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
   { name, activeTab, onTabChange, onEditName, queueBadge },
   ref,
 ) {
+  // State-mediated callback ref so the height-writer effect actually re-runs
+  // when the element attaches. A plain useRef's .current does not trigger
+  // re-renders, so useEffect would never observe a non-null target.
+  const [target, setTarget] = useState<HTMLElement | null>(null)
+  useWriteTabsHeight(target)
+  const setRefs = (el: HTMLElement | null) => {
+    setTarget(el)
+    if (typeof ref === 'function') ref(el)
+    else if (ref) ref.current = el
+  }
+
   return (
     <header
-      ref={ref}
+      ref={setRefs}
       className="tabs"
       role="banner"
       style={{
@@ -1041,7 +1056,8 @@ EOF
 ### Task 8: Implement the `pendingAdds` reducer + context with TDD
 
 **Files:**
-- Create: `src/lib/client/pending-adds.ts`
+- Create: `src/lib/client/pending-adds.ts` (pure: types, reducer, classifier, constants)
+- Create: `src/lib/client/pending-adds-context.tsx` (React: provider, hook, ack listener)
 - Create: `tests/unit/pending-adds.test.ts`
 
 **Context:** §4.3 defines a complex lifecycle for in-flight `queue.add` operations. It must survive tab switches, query edits, and component re-renders; clear only on `state.ack` or user dismiss; never auto-evict; downgrade to "expired" label after 5 minutes; track the bounded-retry-window via three thresholds. This is the most logic-dense module of the redesign — TDD it.
@@ -1280,17 +1296,21 @@ export const classifyPendingState = (
 
 Run the tests: all green.
 
-- [ ] **Step 3: Add a React hook + context wrapper**
+- [ ] **Step 3: Create the React provider + hook in a separate `.tsx` file**
 
-Add to the same file:
+The pure module above stays a `.ts` file with no React imports — so tests run without a DOM. The provider, hook, and the global `state.ack` listener live in a sibling `.tsx`. The listener is hoisted here (out of SearchTab/PasteTab) so an in-flight `queue.add` whose originating tab unmounts still gets its ack cleared.
 
-```ts
-// React glue lives below. Pure logic above stays import-clean for tests.
+`src/lib/client/pending-adds-context.tsx`:
+
+```tsx
 'use client'
-// Re-import-safe — same file used as both pure module and React module.
-import { createContext, useCallback, useContext, useMemo, useReducer, type ReactNode } from 'react'
-
-const reactify = <S, A>(reducer: (s: S, a: A) => S) => reducer
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
+import type { ServerMessage } from '@/lib/types/protocol'
+import {
+  initialPendingAdds,
+  pendingAddsReducer,
+  type PendingAddsState,
+} from './pending-adds'
 
 type Ctx = {
   pendingAdds: PendingAddsState
@@ -1303,14 +1323,35 @@ type Ctx = {
 const PendingAddsContext = createContext<Ctx | null>(null)
 
 export const PendingAddsProvider = ({ children }: { children: ReactNode }) => {
-  const [state, dispatch] = useReducer(reactify(pendingAddsReducer), initialPendingAdds)
+  const [state, dispatch] = useReducer(pendingAddsReducer, initialPendingAdds)
   const add = useCallback((msgId: string, videoId: string, prePitch: number, epoch: number) =>
     dispatch({ type: 'add', msgId, videoId, prePitch, sentAt: Date.now(), epoch }), [])
   const ack = useCallback((msgId: string, ok: boolean, error?: string) =>
     dispatch({ type: 'ack', msgId, ok, error }), [])
   const dismiss = useCallback((msgId: string) => dispatch({ type: 'dismiss', msgId }), [])
   const incrementMutations = useCallback(() => dispatch({ type: 'incrementMutations' }), [])
-  const value = useMemo<Ctx>(() => ({ pendingAdds: state, add, ack, dismiss, incrementMutations }), [state, add, ack, dismiss, incrementMutations])
+
+  // Global ack listener — owns the "did the server respond to my queue.add"
+  // contract regardless of which tab the user is on. §4.3: the pendingAdds
+  // map survives tab switches; the ack-handler that clears entries MUST also
+  // be tab-agnostic, otherwise unmounting a tab mid-flight orphans the entry.
+  // We dispatch only — the reducer is a no-op for unknown msgIds, so this
+  // listener is safe to run even when this provider's pendingAdds is empty.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const m = (e as CustomEvent<ServerMessage>).detail
+      if (m.type === 'state.ack') {
+        dispatch({ type: 'ack', msgId: m.msgId, ok: m.ok, error: m.error })
+      }
+    }
+    window.addEventListener('karaoke-msg', handler)
+    return () => window.removeEventListener('karaoke-msg', handler)
+  }, [])
+
+  const value = useMemo<Ctx>(
+    () => ({ pendingAdds: state, add, ack, dismiss, incrementMutations }),
+    [state, add, ack, dismiss, incrementMutations],
+  )
   return <PendingAddsContext.Provider value={value}>{children}</PendingAddsContext.Provider>
 }
 
@@ -1321,21 +1362,22 @@ export const usePendingAdds = (): Ctx => {
 }
 ```
 
-Note: putting `'use client'` mid-file is unusual but tolerated by Next's module graph because the `createContext`/`useReducer` imports force the whole module to client. Verify by `npx tsc --noEmit`. If a downstream task hits an SSR boundary issue, split into `pending-adds.ts` (pure) + `pending-adds-context.tsx` (React) at that time.
+The dispatcher's `state.ack` reaches every connected client (per the base spec WS contract), and the reducer is a no-op for unknown `msgId`s, so the listener is harmless when there are no pending entries.
+
+Note: the pure module above (`pending-adds.ts`) must NOT import React, JSX, or any DOM type, or vitest will pull React into the test environment. Keep it import-clean.
 
 - [ ] **Step 4: Type-check + commit**
 
 ```bash
 npx tsc --noEmit  # clean
 npx vitest run tests/unit/pending-adds.test.ts  # all green
-git add src/lib/client/pending-adds.ts tests/unit/pending-adds.test.ts
+git add src/lib/client/pending-adds.ts src/lib/client/pending-adds-context.tsx tests/unit/pending-adds.test.ts
 git commit -m "$(cat <<'EOF'
 feat(phone): add pending-adds reducer + React context per §4.3
 
-Lifecycle: msgId-keyed; entries clear only on ack or dismiss; 5-min
-mark relabels but does not evict; bounded retry window via three
-thresholds (80 mutations OR 3-epoch jump OR 2-min wall clock).
-Reducer and classifier are pure functions tested headless.
+Pure .ts (reducer + classifier + constants) tested headless; React
+provider in sibling .tsx owns the global state.ack listener so
+pending entries clear independently of which tab is mounted.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -1358,7 +1400,8 @@ EOF
 ```tsx
 'use client'
 import { forwardRef, useEffect, useState } from 'react'
-import { classifyPendingState, usePendingAdds, type PendingClassification } from '@/lib/client/pending-adds'
+import { classifyPendingState, type PendingClassification } from '@/lib/client/pending-adds'
+import { usePendingAdds } from '@/lib/client/pending-adds-context'
 
 const ACK_TIMEOUT_MS = 6000
 
@@ -1474,12 +1517,16 @@ EOF
 
 ---
 
-### Task 10: Update `Toaster.tsx` for `--top-occluder-height` anchor and UNDO support
+### Task 10: Update `Toaster.tsx` for `--top-occluder-height` anchor and UNDO support, then scaffold phone/source roots
 
 **Files:**
 - Modify: `src/components/shared/Toaster.tsx`
+- Modify: `src/app/page.tsx` (scaffold — keeps existing children, just wraps them in `<Toaster><PendingAddsProvider>`)
+- Modify: `src/app/source/page.tsx` (scaffold — wraps existing return in `<Toaster>`)
 
-**Context:** §5.4 says the toaster anchors at `top: var(--top-occluder-height, 0)` — it does NOT own a safe-area inset. §5.5 says reduced-motion keeps the opacity fade but drops the translate. The redesign also introduces UNDO toasts (queue remove on phone, queue remove/move on source) — the toast surface needs to support an optional action button. The current Toaster reads `type: 'toast'` server messages; UNDO toasts are CLIENT-side only (no protocol change), so we add an imperative `showToast({ level, message, undo })` exposed via a context.
+**Context:** §5.4 anchors the toaster at `top: var(--top-occluder-height, 0)` (it does NOT own a safe-area inset). §5.5 reduced-motion keeps the opacity fade and drops the translate. UNDO toasts are CLIENT-side only — we expose an imperative `showToast({ level, message, undo })` through a `useToaster()` context.
+
+**Why scaffold both roots now:** later tasks (QueueView/SearchTab/PasteTab/YoureUpView/SetlistPanel) call `useToaster()` and `usePendingAdds()`. Without the providers mounted, those components would crash at runtime ("must be used inside …"). Wrapping `app/page.tsx` and `source/page.tsx` here — even though the children are still the OLD components — keeps every intermediate task functional. The final composition in Task 26 just upgrades the children; it does not re-introduce the providers.
 
 - [ ] **Step 1: Rewrite the file**
 
@@ -1611,21 +1658,87 @@ export const Toaster = ({ children }: { children?: ReactNode }) => {
 }
 ```
 
-The Toaster is now a context provider — it wraps its children with the `useToaster` context AND renders the toast surface. The old prop-less `<Toaster />` shape changes to `<Toaster>{children}</Toaster>`; all current call sites mount Toaster as a sibling, not a wrapper, so we keep the empty-children form working by accepting `children` as optional. Existing call sites stay valid (`<Toaster />`) until the rewrites in later tasks switch to the provider form.
+The Toaster is now a context provider — it wraps its children with the `useToaster` context AND renders the toast surface. The old prop-less `<Toaster />` shape changes to `<Toaster>{children}</Toaster>`; passing `children` is required for `useToaster()` consumers to see the provider, but the empty form (`<Toaster />`) stays valid for sites that only render server-driven toasts.
 
-- [ ] **Step 2: Type-check + commit**
+- [ ] **Step 2: Scaffold the phone root with both providers**
+
+Edit `src/app/page.tsx` to wrap its existing return in `<Toaster><PendingAddsProvider>…</PendingAddsProvider></Toaster>`. Keep all existing children unchanged — this is purely a provider wrap so later tasks can call `useToaster()` / `usePendingAdds()` without crashing.
+
+Concretely, the new shape of `src/app/page.tsx` is:
+
+```tsx
+'use client'
+import { useEffect, useState } from 'react'
+import { NameEntry } from '@/components/phone/NameEntry'
+import { QueueView } from '@/components/phone/QueueView'
+import { SearchTab } from '@/components/phone/SearchTab'
+import { PasteTab } from '@/components/phone/PasteTab'
+import { LivePitchSheet } from '@/components/phone/LivePitchSheet'
+import { Toaster } from '@/components/shared/Toaster'
+import { PendingAddsProvider } from '@/lib/client/pending-adds-context'
+import { getSessionId, getStoredName, useConnection } from '@/lib/client/ws'
+
+type Tab = 'queue' | 'search' | 'paste'
+
+export default function Phone() {
+  return (
+    <Toaster>
+      <PendingAddsProvider>
+        <PhoneApp />
+      </PendingAddsProvider>
+    </Toaster>
+  )
+}
+
+const PhoneApp = () => {
+  const [name, setName] = useState<string>('')
+  const [tab, setTab] = useState<Tab>('queue')
+  const sessionId = typeof window === 'undefined' ? '' : getSessionId()
+  useEffect(() => { setName(getStoredName()) }, [])
+  const conn = useConnection({ name })
+  if (!name) return <NameEntry onSubmit={setName} />
+  return (
+    <main style={{ paddingBottom: 140 }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderBottom: '1px solid var(--ink-deep)' }}>
+        <div className="uc" style={{ fontSize: 11 }}>● {name}</div>
+        <nav style={{ display: 'flex', gap: 8 }}>
+          {(['queue', 'search', 'paste'] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)} className="uc"
+              style={{ padding: '6px 10px', fontSize: 10, background: tab === t ? 'var(--hanko-red)' : 'transparent', color: 'var(--paper-cream)' }}>
+              {t}
+            </button>
+          ))}
+        </nav>
+      </header>
+      {tab === 'queue' && <QueueView conn={conn} sessionId={sessionId} />}
+      {tab === 'search' && <SearchTab conn={conn} />}
+      {tab === 'paste' && <PasteTab conn={conn} />}
+      <LivePitchSheet conn={conn} sessionId={sessionId} />
+    </main>
+  )
+}
+```
+
+Note: `<QueueView>` here is still the OLD signature (`conn`, `sessionId` only). Task 22 expands the prop list; Task 26 plumbs the new props. The scaffolding intentionally keeps the OLD components mounted so the app keeps working through the rewrites.
+
+- [ ] **Step 3: Scaffold the source root**
+
+The source `src/app/source/page.tsx` was already updated in Task 11 of this plan to wrap the running show in `<Toaster>…</Toaster>`. That's compatible with the Toaster-as-provider change above (the source page has no `useToaster()` consumers in any task except `SetlistPanel`, which is rendered below the wrap). No additional edits needed in this step.
+
+- [ ] **Step 4: Type-check + commit**
 
 ```bash
 npx tsc --noEmit
-git add src/components/shared/Toaster.tsx
+git add src/components/shared/Toaster.tsx src/app/page.tsx
 git commit -m "$(cat <<'EOF'
-refactor(toaster): anchor at --top-occluder-height + add UNDO support
+refactor(toaster): provider + UNDO support; wrap phone root early
 
-Toaster now exposes a useToaster() hook for imperative client-side
-toasts with optional UNDO actions per §3.6 and §4.2. Container
-anchors below the full top chrome via --top-occluder-height; the
-.toast class supplies the reduced-motion-aware mount animation per
-§5.5. Existing `<Toaster />` call sites stay valid.
+Toaster now exposes useToaster() for imperative client toasts with
+optional UNDO actions per §3.6 and §4.2. Anchored at
+--top-occluder-height per §5.4; .toast class supplies the
+reduced-motion-aware mount animation per §5.5. Phone root wraps the
+old app in <Toaster><PendingAddsProvider> so later component
+rewrites can consume both hooks without crashing.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -1935,7 +2048,7 @@ export const QrPanel = ({ variant = 'full', onOpenJoinModal }: QrPanelProps) => 
 
   return (
     <div className="paper-card paper-grain" style={{ textAlign: 'center' }}>
-      <div className="uc" style={{ fontSize: 9, letterSpacing: '0.2em', color: 'var(--ink-muted)' }}>scan to join</div>
+      <div className="uc" style={{ fontSize: 12, letterSpacing: '0.2em', color: 'var(--ink-muted)' }}>scan to join</div>
       <div style={{ margin: '6px auto', width: 110, height: 110, background: 'var(--paper-cream)' }}>
         {fullDataUrl && <img src={fullDataUrl} alt={`Join URL ${url}`} width={110} height={110} style={{ display: 'block' }} />}
       </div>
@@ -1973,7 +2086,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 ```tsx
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import qrcode from 'qrcode'
 
 export type JoinUrlModalProps = { open: boolean; onClose: () => void }
@@ -1999,26 +2112,55 @@ const supportsDialog = () =>
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   typeof (HTMLDialogElement.prototype as any).showModal === 'function'
 
+// Compact landscape: QR shrinks to 160 CSS px when height ≤ 480 (§5.6).
+const useCompactLandscape = (): boolean => {
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mql = window.matchMedia('(max-height: 480px)')
+    const apply = () => setCompact(mql.matches)
+    apply()
+    if (mql.addEventListener) mql.addEventListener('change', apply)
+    else mql.addListener(apply)
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener('change', apply)
+      else mql.removeListener(apply)
+    }
+  }, [])
+  return compact
+}
+
 export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
   const closeBtnRef = useRef<HTMLButtonElement>(null)
   const url = useJoinUrl()
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const [copied, setCopied] = useState(false)
+  const compact = useCompactLandscape()
+  const qrPx = compact ? 160 : 240
+
+  // Stabilize onClose so the dialog-effect doesn't re-fire on every parent render.
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
+  const stableClose = useCallback(() => onCloseRef.current(), [])
 
   useEffect(() => {
     if (!url) return
-    qrcode.toDataURL(url, { margin: 1, width: 320 }).then(setQrDataUrl).catch(() => setQrDataUrl(''))
-  }, [url])
+    qrcode.toDataURL(url, { margin: 1, width: qrPx * 1.5 }).then(setQrDataUrl).catch(() => setQrDataUrl(''))
+  }, [url, qrPx])
   useScrollLock(open)
   useEffect(() => {
     if (!open) return
     if (supportsDialog() && dialogRef.current) {
       const d = dialogRef.current
       const prev = document.activeElement as HTMLElement | null
-      d.showModal()
+      // Strict-mode double-mount or rapid re-render can re-enter this effect
+      // while the dialog is already open. Guard so showModal() doesn't throw
+      // InvalidStateError.
+      if (!d.open) d.showModal()
       closeBtnRef.current?.focus()
-      const onCancel = (e: Event) => { e.preventDefault(); onClose() }
+      const onCancel = (e: Event) => { e.preventDefault(); stableClose() }
       d.addEventListener('cancel', onCancel)
       return () => {
         d.removeEventListener('cancel', onCancel)
@@ -2026,15 +2168,36 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
         prev?.focus()
       }
     }
+    // Fallback path. Must implement focus trap manually per §5.6.
+    const root = containerRef.current
     const prev = document.activeElement as HTMLElement | null
     closeBtnRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey); prev?.focus() }
-  }, [open, onClose])
+    const focusables = (): HTMLElement[] => {
+      if (!root) return []
+      return Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => !el.hidden && el.offsetParent !== null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { stableClose(); return }
+      if (e.key !== 'Tab') return
+      const f = focusables()
+      if (f.length === 0) { e.preventDefault(); return }
+      const first = f[0]!
+      const last = f[f.length - 1]!
+      const active = document.activeElement as HTMLElement | null
+      if (e.shiftKey && active === first) { e.preventDefault(); last.focus() }
+      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus() }
+    }
+    // Capture-phase keydown so we win over child handlers.
+    window.addEventListener('keydown', onKey, true)
+    return () => { window.removeEventListener('keydown', onKey, true); prev?.focus() }
+  }, [open, stableClose])
 
   const onBackdropTap = (e: React.MouseEvent<HTMLDialogElement>) => {
-    if (e.target === dialogRef.current) onClose()
+    if (e.target === dialogRef.current) stableClose()
   }
   const onCopy = async () => {
     try {
@@ -2047,6 +2210,7 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
 
   const Body = (
     <div
+      ref={containerRef}
       className="join-url-modal__body"
       style={{
         padding: 'env(safe-area-inset-top, 12px) env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 12px) env(safe-area-inset-left, 12px)',
@@ -2056,8 +2220,8 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
       }}
     >
       <div className="uc" style={{ fontSize: 12, letterSpacing: '0.2em' }}>scan to join</div>
-      <div className="join-url-modal__qr" style={{ width: 240, height: 240, background: 'var(--paper-cream)' }}>
-        {qrDataUrl && <img src={qrDataUrl} alt={`Join URL ${url}`} width={240} height={240} style={{ display: 'block' }} />}
+      <div className="join-url-modal__qr" style={{ width: qrPx, height: qrPx, background: 'var(--paper-cream)' }}>
+        {qrDataUrl && <img src={qrDataUrl} alt={`Join URL ${url}`} width={qrPx} height={qrPx} style={{ display: 'block' }} />}
       </div>
       <div className="uc" style={{ fontSize: 13, wordBreak: 'break-all', textAlign: 'center' }}>{url}</div>
       <div style={{ display: 'flex', gap: 8 }}>
@@ -2139,15 +2303,16 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
   const shuffle = () => conn.send({ type: 'queue.shuffle', msgId: randomUUID() })
 
   const remove = (item: QueueItem) => {
-    const originalIndex = queue.findIndex((q) => q.id === item.id)
     conn.send({ type: 'queue.remove', msgId: randomUUID(), itemId: item.id })
+    // Undo can only re-add (best effort) — queue.add gives the song a NEW id
+    // server-side, so the original item.id can't be used in a follow-up
+    // queue.move. Spec §3.6 says "at the same position if possible";
+    // re-adding at the tail is the conservative behavior. Source has ⤴ to
+    // promote it back to position 1 if desired.
     showToast({
       level: 'warn', message: `Removed: ${item.title}`, ttlMs: UNDO_TTL_MS,
       undo: { label: 'UNDO', onTap: () => {
         conn.send({ type: 'queue.add', msgId: randomUUID(), videoId: item.videoId, prePitch: item.prePitch })
-        if (originalIndex >= 0) {
-          conn.send({ type: 'queue.move', msgId: randomUUID(), itemId: item.id, toIndex: originalIndex })
-        }
       }},
     })
   }
@@ -2440,13 +2605,23 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
 }
 ```
 
-- [ ] **Step 4: Hook `IdleSplash` into `VideoPlayer`**
+- [ ] **Step 4: Hook `IdleSplash` and `SourceOfflineState` into `VideoPlayer`**
 
-In `VideoPlayer.tsx`, replace the `isPlaying` ternary from Task 13 with:
+In `VideoPlayer.tsx`, replace the `isPlaying` ternary from Task 13 with state-aware branches:
 
 ```tsx
 const isPlaying = player && player.status !== 'idle'
 const queueLen = conn.state?.queue.length ?? 0
+const sourceConnected = conn.state?.sourceConnected ?? false
+const sourceReady = conn.state?.sourceReady ?? false
+// §3.3a: source-offline with queued items renders the dedicated offline panel
+// INSIDE the video frame (replacing the splash). Idle with no queue still
+// shows the regular splash even when offline — there's nothing to be lost.
+const showOfflinePanel = !isPlaying && queueLen > 0 && (!sourceConnected || !sourceReady)
+// §3.3-bis: the transient-recovery "▶ Start next song" button only appears
+// when the source IS ready (otherwise auto-advance can't fire and the button
+// would do nothing on tap).
+const transientWithQueue = queueLen > 0 && sourceConnected && sourceReady
 ```
 
 Then in the JSX:
@@ -2459,15 +2634,45 @@ Then in the JSX:
     </div>
     <NowPlayingStrip conn={conn} player={player} />
   </>
+) : showOfflinePanel ? (
+  <SourceOfflineState />
 ) : (
-  <IdleSplash conn={conn} transientWithQueue={queueLen > 0} />
+  <IdleSplash conn={conn} transientWithQueue={transientWithQueue} />
 )}
 ```
 
-Add the import:
+Add the imports:
 
 ```tsx
 import { IdleSplash } from './IdleSplash'
+import { SourceOfflineState } from './SourceOfflineState'
+```
+
+The `SourceOfflineState` component renders as an absolutely-positioned overlay matching `IdleSplash`'s positioning so it occupies the framed video area cleanly. Update its outer container style to match:
+
+```tsx
+// In src/components/source/SourceOfflineState.tsx — set position: absolute, inset: 0.
+```
+
+Replace the existing `SourceOfflineState.tsx` body with:
+
+```tsx
+'use client'
+export const SourceOfflineState = () => (
+  <div
+    className="source-offline"
+    style={{
+      position: 'absolute', inset: 0,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'linear-gradient(135deg, var(--ink-deep), var(--ink-black))',
+      color: 'var(--riso-pink)',
+    }}
+  >
+    <div className="uc offline-banner" style={{ fontSize: 16, letterSpacing: '0.2em' }}>
+      ▌ source offline — reconnecting…
+    </div>
+  </div>
+)
 ```
 
 - [ ] **Step 5: Verify + commit**
@@ -2873,7 +3078,11 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
         {p.item.queuedBy.name.toUpperCase()} · KEY {p.livePitch >= 0 ? '+' : ''}{p.livePitch}
       </div>
       <div style={{ marginTop: 6, height: 3, background: 'var(--ink-muted)' }}>
-        <div style={{ width: `${progress * 100}%`, height: '100%', background: 'var(--hanko-red)', transition: p.status === 'playing' ? 'width 0.2s linear' : 'none' }} />
+        {/* No CSS transition on the width — that would be a decorative
+            animation outside the §5.4/§5.5 registry. The bar steps with
+            React state on every state.player tick, which is smooth enough
+            given heartbeat cadence (~500 ms). */}
+        <div style={{ width: `${progress * 100}%`, height: '100%', background: 'var(--hanko-red)' }} />
       </div>
     </div>
   )
@@ -2907,62 +3116,101 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 - Tap a row → expand; tap same row's chevron → collapse; tap a different row → collapses the first.
 - Editing the query collapses any expanded row immediately.
 - Submitting clears all results.
-- `pendingAdds` map is global (lives in the PhoneRoot context from Task 8); a queue.add operation has a single `msgId` (the "operation id") used for retries.
-- ADD button pending lock: native `disabled` + `aria-disabled`; stepper buttons also disabled during pending.
-- Search race protection: `activeSearchMsgId` filter; submit lock until results / timeout / cancel.
+- `pendingAdds` map is global (lives in the PhoneRoot provider from Task 8); a queue.add operation has a single `msgId` (the "operation id") used for retries. The ack handler is global to the provider — SearchTab does NOT listen for `state.ack` itself.
+- ADD button pending lock: native `disabled` + `aria-disabled`; stepper buttons AND the row's expand/collapse toggle disabled during pending.
+- Off-tab success path: on `ok` ack, if the originating row is still mounted+expanded, switch to QUEUE tab and reset search; otherwise fire a non-blocking `▌ Added — N in queue` toast and leave the user where they are. The "still mounted+expanded" check uses the parent's `activeTab` state passed in as a prop.
+- Search race protection: `activeSearchMsgId` filter; submit lock until results / timeout / cancel. Pressing Enter while locked is a no-op.
 - Cancel current search action while in flight.
 - Semantic markup: `<button>` row header, body is a sibling, `aria-expanded` on the button.
+- **Composite row key**: results from one query can contain duplicate `videoId`s (rare but possible — caption channels often re-upload). Keying purely on `videoId` causes React reconciliation collisions and per-row pending-state collapse. Use `${videoId}:${resultIndex}` as the row key AND as the expand state key.
 
 - [ ] **Step 1: Rewrite**
 
 ```tsx
 'use client'
 import { randomUUID } from '@/lib/client/uuid'
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { SearchResult } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
 import { KeyStepper, clampPitch } from './KeyStepper'
-import { usePendingAdds } from '@/lib/client/pending-adds'
+import { usePendingAdds } from '@/lib/client/pending-adds-context'
+import { useToaster } from '@/components/shared/Toaster'
 
 const SEARCH_TIMEOUT_MS = 8000
 
-export const SearchTab = ({ conn, currentEpoch, onAddedSwitchToQueue }: {
+export type SearchTabProps = {
   conn: Connection
   currentEpoch: number
+  isActive: boolean                // true iff the parent's activeTab is "search"
+  queueLen: number
   onAddedSwitchToQueue: () => void
-}) => {
+}
+
+// Row identity = (videoId, index-in-results-list). Lets duplicate videoIds in
+// the same result set behave as independent rows per §4.3 "two distinct rows
+// for the same videoId" rule.
+const rowKey = (videoId: string, idx: number) => `${videoId}:${idx}`
+
+export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitchToQueue }: SearchTabProps) => {
   const [q, setQ] = useState('')
   const [results, setResults] = useState<SearchResult[]>([])
   const [activeSearchMsgId, setActiveSearchMsgId] = useState<string | null>(null)
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [expandedKey, setExpandedKey] = useState<string | null>(null)
   const [pitch, setPitch] = useState(0)
-  const [errorByRow, setErrorByRow] = useState<Record<string, string>>({})
+  const [errorByMsg, setErrorByMsg] = useState<Record<string, string>>({})
+  // Track which row originated each pending op, so off-tab acks know whether
+  // the originator is still around. Map<msgId, rowKey>.
+  const originatorRef = useRef<Map<string, string>>(new Map())
+  // Most-recently-acked add for the "switch vs toast" decision. Kept in a ref
+  // so the global ack listener in the provider doesn't need to know about us.
   const searchCleanupRef = useRef<(() => void) | null>(null)
-  const { pendingAdds, add: addPending, ack: ackPending } = usePendingAdds()
+  const { pendingAdds, add: addPending } = usePendingAdds()
+  const { showToast } = useToaster()
+  const isActiveRef = useRef(isActive)
+  isActiveRef.current = isActive
+  const expandedKeyRef = useRef(expandedKey)
+  expandedKeyRef.current = expandedKey
+  const queueLenRef = useRef(queueLen)
+  queueLenRef.current = queueLen
 
   // Cleanup any in-flight search on unmount.
   useEffect(() => () => searchCleanupRef.current?.(), [])
 
-  // Listen for state.ack so we can clear pendingAdds entries we own.
-  useEffect(() => {
-    const handler = (e: Event) => {
+  // Per-add success/failure side effects. The provider's global ack listener
+  // already dispatches into pendingAdds; this listener is purely UX (switch
+  // tab / show toast / surface inline error). Listening BY msgId restricts
+  // each add to its own observer so we don't react to other tabs' adds.
+  const addAckListener = useCallback((msgId: string, rk: string) => {
+    const onMsg = (e: Event) => {
       const m = (e as CustomEvent<ServerMessage>).detail
-      if (m.type === 'state.ack' && pendingAdds.has(m.msgId)) {
-        ackPending(m.msgId, m.ok, m.error)
-        if (!m.ok && m.error) setErrorByRow((prev) => {
-          const entry = pendingAdds.get(m.msgId)
-          if (!entry) return prev
-          return { ...prev, [entry.videoId]: m.error! }
-        })
+      if (m.type !== 'state.ack' || m.msgId !== msgId) return
+      window.removeEventListener('karaoke-msg', onMsg)
+      originatorRef.current.delete(msgId)
+      if (m.ok) {
+        // Switch only if the originating row is still mounted+expanded AND
+        // the user is currently on the search tab.
+        if (isActiveRef.current && expandedKeyRef.current === rk) {
+          setResults([])
+          setQ('')
+          setExpandedKey(null)
+          onAddedSwitchToQueue()
+        } else {
+          // Off-tab success: non-blocking toast. queueLen+1 because the queue
+          // count in state hasn't ticked yet at the moment of ack arrival —
+          // it does immediately after, but the toast reads stale otherwise.
+          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue` })
+        }
+      } else {
+        if (m.error) setErrorByMsg((prev) => ({ ...prev, [msgId]: m.error! }))
       }
     }
-    window.addEventListener('karaoke-msg', handler)
-    return () => window.removeEventListener('karaoke-msg', handler)
-  }, [pendingAdds, ackPending])
+    window.addEventListener('karaoke-msg', onMsg)
+  }, [onAddedSwitchToQueue, showToast])
 
   const doSearch = useCallback(() => {
     if (!q.trim()) return
+    if (activeSearchMsgId !== null) return // §4.3 submit lock
     searchCleanupRef.current?.()
     const msgId = randomUUID()
     setActiveSearchMsgId(msgId)
@@ -2986,9 +3234,9 @@ export const SearchTab = ({ conn, currentEpoch, onAddedSwitchToQueue }: {
     searchCleanupRef.current = cleanup
     window.addEventListener('karaoke-msg', onMsg)
     setResults([])
-    setExpandedId(null)
+    setExpandedKey(null)
     conn.send({ type: 'search', msgId, query: q.trim() })
-  }, [conn, q])
+  }, [conn, q, activeSearchMsgId])
 
   const cancelSearch = useCallback(() => {
     searchCleanupRef.current?.()
@@ -2997,45 +3245,35 @@ export const SearchTab = ({ conn, currentEpoch, onAddedSwitchToQueue }: {
 
   const onQueryChange = (v: string) => {
     setQ(v)
-    setExpandedId(null) // §4.3: every keystroke collapses any expanded row
+    setExpandedKey(null) // §4.3: every keystroke collapses any expanded row
   }
 
-  const toggle = (id: string) => {
-    setExpandedId((cur) => (cur === id ? null : id))
+  const toggle = (rk: string) => {
+    setExpandedKey((cur) => (cur === rk ? null : rk))
     setPitch(0)
   }
 
-  const doAdd = (r: SearchResult, existingMsgId?: string) => {
-    const msgId = existingMsgId ?? randomUUID()
-    setErrorByRow((prev) => { const { [r.videoId]: _, ...rest } = prev; return rest })
-    if (!existingMsgId) {
-      addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch)
-    }
-    conn.send({ type: 'queue.add', msgId, videoId: r.videoId, prePitch: clampPitch(pitch) })
-    // On ack we switch tabs and clear results.
-    const onMsg = (e: Event) => {
-      const m = (e as CustomEvent<ServerMessage>).detail
-      if (m.type === 'state.ack' && m.msgId === msgId) {
-        window.removeEventListener('karaoke-msg', onMsg)
-        if (m.ok) {
-          // Only switch if the user is still on Search with the originating row expanded.
-          if (expandedId === r.videoId) {
-            setResults([])
-            setQ('')
-            setExpandedId(null)
-            onAddedSwitchToQueue()
-          }
-        }
-      }
-    }
-    window.addEventListener('karaoke-msg', onMsg)
-  }
-
-  const inFlightForRow = (videoId: string) => {
-    for (const v of pendingAdds.values()) {
-      if (v.videoId === videoId) return v
+  // Look up the pending op originated FROM this specific row (not just any op
+  // for the same videoId — that would cross-couple duplicate-result rows).
+  const pendingForRow = (rk: string) => {
+    for (const [msgId, originKey] of originatorRef.current.entries()) {
+      if (originKey !== rk) continue
+      const entry = pendingAdds.get(msgId)
+      if (entry) return entry
     }
     return null
+  }
+
+  const doAdd = (r: SearchResult, rk: string) => {
+    const existing = pendingForRow(rk)
+    const msgId = existing?.msgId ?? randomUUID()
+    setErrorByMsg((prev) => { const { [msgId]: _, ...rest } = prev; return rest })
+    if (!existing) {
+      addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch)
+      originatorRef.current.set(msgId, rk)
+      addAckListener(msgId, rk)
+    }
+    conn.send({ type: 'queue.add', msgId, videoId: r.videoId, prePitch: clampPitch(pitch) })
   }
 
   return (
@@ -3044,7 +3282,13 @@ export const SearchTab = ({ conn, currentEpoch, onAddedSwitchToQueue }: {
         <input
           value={q}
           onChange={(e) => onQueryChange(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') doSearch() }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              // §4.3 submit lock: no-op on Enter while a search is in flight.
+              if (activeSearchMsgId === null) doSearch()
+            }
+          }}
           inputMode="search"
           enterKeyHint="search"
           placeholder="bohemian rhapsody karaoke"
@@ -3076,21 +3320,22 @@ export const SearchTab = ({ conn, currentEpoch, onAddedSwitchToQueue }: {
         )}
       </div>
       <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {results.map((r) => {
-          const isExpanded = expandedId === r.videoId
-          const bodyId = `search-row-${r.videoId}-body`
-          const pending = inFlightForRow(r.videoId)
-          const rowError = errorByRow[r.videoId]
+        {results.map((r, idx) => {
+          const rk = rowKey(r.videoId, idx)
+          const isExpanded = expandedKey === rk
+          const bodyId = `search-row-${rk}-body`
+          const pending = pendingForRow(rk)
+          const rowError = pending ? errorByMsg[pending.msgId] : undefined
           return (
             <SearchRow
-              key={r.videoId}
+              key={rk}
               result={r}
               isExpanded={isExpanded}
               bodyId={bodyId}
-              onToggle={() => toggle(r.videoId)}
+              onToggle={() => toggle(rk)}
               pitch={isExpanded ? pitch : 0}
               setPitch={setPitch}
-              onAdd={() => doAdd(r, pending?.msgId)}
+              onAdd={() => doAdd(r, rk)}
               pending={pending}
               error={rowError}
             />
@@ -3115,6 +3360,9 @@ type SearchRowProps = {
 
 const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAdd, pending, error }: SearchRowProps) => {
   const isPending = !!pending
+  // §4.3: when pending AND no error, freeze the row's entire interactive surface
+  // (header toggle, stepper, ADD).
+  const lockToggle = isPending && !error
   return (
     <li
       className={`search-row paper-card paper-grain ${isExpanded ? 'paper-card--accent' : ''}`}
@@ -3124,6 +3372,8 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
       <button
         type="button"
         onClick={onToggle}
+        disabled={lockToggle}
+        aria-disabled={lockToggle || undefined}
         aria-expanded={isExpanded}
         aria-controls={bodyId}
         style={{
@@ -3148,13 +3398,13 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
         <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <span className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>KEY</span>
-            <KeyStepper value={pitch} onChange={setPitch} disabled={isPending} />
+            <KeyStepper value={pitch} onChange={setPitch} disabled={lockToggle} />
           </div>
           <button
             type="button"
             onClick={onAdd}
-            disabled={isPending && !error}
-            aria-disabled={(isPending && !error) || undefined}
+            disabled={lockToggle}
+            aria-disabled={lockToggle || undefined}
             className="hit-target uc"
             style={{
               padding: '10px 16px',
@@ -3174,7 +3424,7 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
 }
 ```
 
-Note: We use `data-no-measure="1"` so the search-row body expands instantly (no max-height animation) — matches the §5.5 fallback path and avoids the per-row measurement complexity in this first iteration. If the verification pass shows the snap-open feels jarring, swap to the measured path later.
+Note: `data-no-measure="1"` makes the row body expand instantly (no max-height animation) — matches the §5.5 fallback path and skips the per-row measurement complexity in this first iteration. If the snap-open feels jarring in the verification pass, swap to the measured path.
 
 - [ ] **Step 2: Commit**
 
@@ -3205,50 +3455,98 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```tsx
 'use client'
 import { randomUUID } from '@/lib/client/uuid'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { ServerMessage } from '@/lib/types/protocol'
 import { KeyStepper, clampPitch } from './KeyStepper'
-import { usePendingAdds } from '@/lib/client/pending-adds'
+import { usePendingAdds } from '@/lib/client/pending-adds-context'
+import { useToaster } from '@/components/shared/Toaster'
 
 const VIDEO_ID = /(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/
 const RESOLVE_TIMEOUT_MS = 12000
 
 type Meta = { videoId: string; title: string; thumbnail: string; durationSec: number }
 
-export const PasteTab = ({ conn, currentEpoch }: { conn: Connection; currentEpoch: number }) => {
+// Compact-landscape (height ≤ 480 CSS px) — textarea drops to 2 rows.
+const useCompactLandscape = (): boolean => {
+  const [compact, setCompact] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const mql = window.matchMedia('(max-height: 480px)')
+    const apply = () => setCompact(mql.matches)
+    apply()
+    if (mql.addEventListener) mql.addEventListener('change', apply)
+    else mql.addListener(apply)
+    return () => {
+      if (mql.removeEventListener) mql.removeEventListener('change', apply)
+      else mql.removeListener(apply)
+    }
+  }, [])
+  return compact
+}
+
+export type PasteTabProps = {
+  conn: Connection
+  currentEpoch: number
+  isActive: boolean
+  queueLen: number
+}
+
+export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabProps) => {
   const [url, setUrl] = useState('')
   const [meta, setMeta] = useState<Meta | null>(null)
   const [pitch, setPitch] = useState(0)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Tracks the in-flight add msgId originated by THIS PasteTab's current
+  // preview. A different preview (new resolve) starts a NEW msgId; the
+  // pendingAdds map keeps both as independent ops per §4.3.
+  const [activeAddMsgId, setActiveAddMsgId] = useState<string | null>(null)
+  const [addError, setAddError] = useState<string | null>(null)
   const cleanupRef = useRef<(() => void) | null>(null)
-  const { pendingAdds, add: addPending, ack: ackPending } = usePendingAdds()
+  const { pendingAdds, add: addPending } = usePendingAdds()
+  const { showToast } = useToaster()
+  const compact = useCompactLandscape()
+  const isActiveRef = useRef(isActive)
+  isActiveRef.current = isActive
+  const queueLenRef = useRef(queueLen)
+  queueLenRef.current = queueLen
 
   useEffect(() => () => cleanupRef.current?.(), [])
 
-  useEffect(() => {
-    const handler = (e: Event) => {
+  // Per-add ack listener — listens only for OUR active add's msgId. The global
+  // ack listener in PendingAddsProvider already removes the map entry; here we
+  // just handle UX (toast / clear / error).
+  const addAckListener = useCallback((msgId: string) => {
+    const onMsg = (e: Event) => {
       const m = (e as CustomEvent<ServerMessage>).detail
-      if (m.type === 'state.ack' && pendingAdds.has(m.msgId)) {
-        ackPending(m.msgId, m.ok, m.error)
-        if (m.ok) {
-          setMeta(null)
-          setUrl('')
-        } else if (m.error) {
-          setErr(m.error)
+      if (m.type !== 'state.ack' || m.msgId !== msgId) return
+      window.removeEventListener('karaoke-msg', onMsg)
+      // Only act if THIS msgId is still the active add. If the user resolved a
+      // new URL in the meantime, the prior op is no longer "active" and we let
+      // it complete silently (provider has already cleared the map entry).
+      setActiveAddMsgId((cur) => {
+        if (cur !== msgId) return cur
+        return null
+      })
+      if (m.ok) {
+        if (isActiveRef.current) {
+          setMeta(null); setUrl(''); setAddError(null)
+        } else {
+          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue` })
         }
+      } else if (m.error) {
+        setAddError(m.error)
       }
     }
-    window.addEventListener('karaoke-msg', handler)
-    return () => window.removeEventListener('karaoke-msg', handler)
-  }, [pendingAdds, ackPending])
+    window.addEventListener('karaoke-msg', onMsg)
+  }, [showToast])
 
   const resolve = () => {
     const m = url.match(VIDEO_ID)
     if (!m) { setErr('Could not find a YouTube video id in that URL.'); return }
     cleanupRef.current?.()
-    setBusy(true); setErr(null); setMeta(null)
+    setBusy(true); setErr(null); setMeta(null); setAddError(null); setActiveAddMsgId(null)
     const msgId = randomUUID()
     const onMsg = (e: Event) => {
       const x = (e as CustomEvent<ServerMessage>).detail
@@ -3272,15 +3570,26 @@ export const PasteTab = ({ conn, currentEpoch }: { conn: Connection; currentEpoc
     conn.send({ type: 'meta.fetch', msgId, videoId: m[1]! })
   }
 
-  const inFlight = meta ? Array.from(pendingAdds.values()).find((v) => v.videoId === meta.videoId) ?? null : null
+  // Pending status for the ADD button is keyed on activeAddMsgId, not on
+  // pendingAdds.has(...) for the videoId. This lets the same videoId be
+  // re-queued (at a different key) without the button being locked just
+  // because a previous-attempt-from-this-tab still happens to be pending.
+  const activePending = activeAddMsgId ? pendingAdds.get(activeAddMsgId) ?? null : null
 
   const doAdd = () => {
     if (!meta) return
-    const existing = inFlight?.msgId
-    const msgId = existing ?? randomUUID()
-    if (!existing) addPending(msgId, meta.videoId, clampPitch(pitch), currentEpoch)
+    if (activeAddMsgId && !addError) return // pending lock
+    const msgId = activeAddMsgId && addError ? activeAddMsgId : randomUUID()
+    if (msgId !== activeAddMsgId) {
+      addPending(msgId, meta.videoId, clampPitch(pitch), currentEpoch)
+      setActiveAddMsgId(msgId)
+      addAckListener(msgId)
+    }
+    setAddError(null)
     conn.send({ type: 'queue.add', msgId, videoId: meta.videoId, prePitch: clampPitch(pitch) })
   }
+
+  const lockAdd = !!activePending && !addError
 
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -3291,7 +3600,7 @@ export const PasteTab = ({ conn, currentEpoch }: { conn: Connection; currentEpoc
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://youtube.com/watch?v=…"
           aria-label="YouTube URL"
-          rows={3}
+          rows={compact ? 2 : 3}
           style={{ width: '100%', padding: 10, fontFamily: 'var(--mono-font)', fontSize: 16, background: 'var(--paper-cream)', color: 'var(--ink-black)' }}
         />
         <button
@@ -3315,23 +3624,26 @@ export const PasteTab = ({ conn, currentEpoch }: { conn: Connection; currentEpoc
           <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <span className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>KEY</span>
-              <KeyStepper value={pitch} onChange={setPitch} disabled={!!inFlight && !err} />
+              <KeyStepper value={pitch} onChange={setPitch} disabled={lockAdd} />
             </div>
             <button
               type="button"
               onClick={doAdd}
-              disabled={!!inFlight && !err}
-              aria-disabled={(!!inFlight && !err) || undefined}
+              disabled={lockAdd}
+              aria-disabled={lockAdd || undefined}
               className="hit-target uc"
               style={{
                 padding: '10px 16px',
-                background: inFlight ? 'var(--ink-muted)' : 'var(--hanko-red)',
+                background: activePending ? 'var(--ink-muted)' : 'var(--hanko-red)',
                 color: 'var(--paper-cream)', fontSize: 11,
               }}
             >
-              {inFlight ? (err ? 'tap to retry' : 'queueing…') : 'ADD'}
+              {activePending ? (addError ? 'tap to retry' : 'queueing…') : 'ADD'}
             </button>
           </div>
+          {addError && (
+            <div className="uc" style={{ marginTop: 6, fontSize: 11, color: 'var(--riso-pink)' }}>▌ {addError}</div>
+          )}
         </div>
       )}
     </div>
@@ -3378,13 +3690,13 @@ rm src/components/phone/LivePitchSheet.tsx
 ```tsx
 'use client'
 import { randomUUID } from '@/lib/client/uuid'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { PlayerState } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
-import { KeyStepper, clampPitch } from './KeyStepper'
+import { clampPitch } from './KeyStepper'
 
-const PENDING_RETRY_TIMEOUT_MS = 6000
+const NO_ACK_RETRY_MS = 6000
 
 const fmtMmSs = (s: number) => {
   if (!isFinite(s) || s < 0) s = 0
@@ -3393,7 +3705,17 @@ const fmtMmSs = (s: number) => {
   return `${m}:${String(sec).padStart(2, '0')}`
 }
 
-type PendingPitch = { value: number; itemId: string; epoch: number; msgId: string | null }
+type PendingPitch = {
+  value: number
+  itemId: string
+  epoch: number
+  msgId: string | null   // null while we're offline (no send yet)
+  timer: ReturnType<typeof setTimeout> | null
+  // serverRejectedOnce: after one ok=false we generate a fresh msgId for the
+  // next retry per spec ("Generate a new msgId for any retry"). When this is
+  // true and the user changes pitch again, we MUST mint a new msgId.
+  serverRejectedOnce: boolean
+}
 
 export type YoureUpViewProps = {
   conn: Connection
@@ -3409,58 +3731,101 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
   const [pitch, setPitch] = useState(player.livePitch)
   const pendingRef = useRef<PendingPitch | null>(null)
 
-  // Source-driven live pitch updates that originated elsewhere should sync the
-  // local readout when the user is NOT offline-editing.
+  const clearPendingTimer = () => {
+    const p = pendingRef.current
+    if (p && p.timer) { clearTimeout(p.timer); p.timer = null }
+  }
+
+  useEffect(() => () => clearPendingTimer(), [])
+
+  // Source-driven live pitch updates sync the readout when we're online and
+  // have no in-flight pending — otherwise the user's local edit wins until ack.
   useEffect(() => {
-    if (sourceConnected && sourceReady) {
+    const p = pendingRef.current
+    if (sourceConnected && sourceReady && !p) {
       setPitch(player.livePitch)
     }
   }, [player.livePitch, sourceConnected, sourceReady])
 
-  // Listen for state.ack so we can clear our pending entry on success and
-  // generate a new msgId for any subsequent retry on ok=false.
+  // Global state.ack listener clears OUR pending entry. (PendingAddsProvider
+  // clears its own map for queue.add msgIds; this listener handles the
+  // player.setLivePitch msgIds we mint.)
   useEffect(() => {
     const handler = (e: Event) => {
       const m = (e as CustomEvent<ServerMessage>).detail
       if (m.type !== 'state.ack') return
       const p = pendingRef.current
-      if (p && p.msgId === m.msgId) {
-        if (m.ok) {
-          pendingRef.current = null
-        } else {
-          // Server rejected; further retries need a fresh msgId. Drop pending and
-          // let the next live-pitch update from the server reflect ground truth.
-          pendingRef.current = null
-        }
+      if (!p || p.msgId !== m.msgId) return
+      if (m.ok) {
+        clearPendingTimer()
+        pendingRef.current = null
+      } else {
+        // §3.3a: on ok=false the next retry must use a NEW msgId. Mark and let
+        // the server's live-pitch broadcast (or user's next tap) drive the next
+        // send.
+        clearPendingTimer()
+        pendingRef.current = { ...p, timer: null, serverRejectedOnce: true }
       }
     }
     window.addEventListener('karaoke-msg', handler)
     return () => window.removeEventListener('karaoke-msg', handler)
   }, [])
 
-  const sendLivePitch = (v: number, msgIdOverride?: string) => {
-    const msgId = msgIdOverride ?? randomUUID()
-    pendingRef.current = { value: v, itemId: player.item.id, epoch: player.epoch, msgId }
-    conn.send({ type: 'player.setLivePitch', msgId, semitones: clampPitch(v) })
-  }
+  const scheduleNoAckRetry = useCallback((msgId: string, value: number) => {
+    const t = setTimeout(() => {
+      const p = pendingRef.current
+      if (!p || p.msgId !== msgId) return
+      // No ack within 6 s → resend with the SAME msgId. Server dedup returns
+      // the cached ack if it had already processed the original; otherwise it
+      // processes the resend.
+      conn.send({ type: 'player.setLivePitch', msgId, semitones: clampPitch(value) })
+      p.timer = setTimeout(() => {
+        // Bound the retry count to one: if the second send also goes unacked
+        // for 6 s, give up. The next user tap will mint a new msgId.
+        if (pendingRef.current && pendingRef.current.msgId === msgId) {
+          clearPendingTimer()
+          pendingRef.current = null
+        }
+      }, NO_ACK_RETRY_MS)
+    }, NO_ACK_RETRY_MS)
+    return t
+  }, [conn])
 
-  // Reconnect replay: when sourceConnected flips from false → true, replay the
-  // pending pitch (same msgId on no-ack timeout, new msgId on prior ok=false).
+  const sendLivePitch = useCallback((value: number, opts?: { reuseMsgId?: string }) => {
+    clearPendingTimer()
+    // serverRejectedOnce forces a NEW msgId regardless of reuseMsgId hint.
+    const prior = pendingRef.current
+    const reject = prior?.serverRejectedOnce === true
+    const msgId = !reject && opts?.reuseMsgId ? opts.reuseMsgId : randomUUID()
+    pendingRef.current = {
+      value,
+      itemId: player.item.id,
+      epoch: player.epoch,
+      msgId,
+      timer: scheduleNoAckRetry(msgId, value),
+      serverRejectedOnce: false,
+    }
+    conn.send({ type: 'player.setLivePitch', msgId, semitones: clampPitch(value) })
+  }, [conn, player.item.id, player.epoch, scheduleNoAckRetry])
+
+  // Reconnect replay per §3.3a.
   const wasConnectedRef = useRef(sourceConnected && sourceReady)
   useEffect(() => {
     const nowConnected = sourceConnected && sourceReady
     if (!wasConnectedRef.current && nowConnected) {
       const p = pendingRef.current
       if (p && p.itemId === player.item.id && p.epoch === player.epoch && p.value !== player.livePitch) {
-        // Same msgId — server dedup will return the cached ack if it already processed.
-        sendLivePitch(p.value, p.msgId ?? undefined)
+        // Replay with same msgId (or new msgId if rejected once) — server
+        // dedup makes this safe.
+        sendLivePitch(p.value, p.msgId ? { reuseMsgId: p.msgId } : undefined)
       } else if (p && (p.itemId !== player.item.id || p.epoch !== player.epoch)) {
         // Song changed under us — discard.
+        clearPendingTimer()
         pendingRef.current = null
       }
     }
     wasConnectedRef.current = nowConnected
-  }, [sourceConnected, sourceReady, player.item.id, player.epoch, player.livePitch])
+  }, [sourceConnected, sourceReady, player.item.id, player.epoch, player.livePitch, sendLivePitch])
 
   const onPitchChange = (v: number) => {
     const clamped = clampPitch(v)
@@ -3468,8 +3833,16 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
     if (sourceConnected && sourceReady) {
       sendLivePitch(clamped)
     } else {
-      // Hold while offline; replay on reconnect.
-      pendingRef.current = { value: clamped, itemId: player.item.id, epoch: player.epoch, msgId: null }
+      // Hold while offline; replay on reconnect. No msgId yet.
+      clearPendingTimer()
+      pendingRef.current = {
+        value: clamped,
+        itemId: player.item.id,
+        epoch: player.epoch,
+        msgId: null,
+        timer: null,
+        serverRejectedOnce: false,
+      }
     }
   }
 
@@ -3508,7 +3881,30 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
         <div className="youre-up__readout" aria-live="polite" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 32, color: 'var(--hanko-red)' }}>
           {pitch >= 0 ? `+${pitch}` : pitch}
         </div>
-        <KeyStepper value={pitch} onChange={onPitchChange} readoutSize="lg" />
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            className="youre-up__btn uc"
+            aria-label="Lower pitch by one semitone"
+            onClick={() => onPitchChange(pitch - 1)}
+            style={{
+              minWidth: 56, minHeight: 56, padding: '8px 14px',
+              background: 'transparent', color: 'var(--paper-cream)',
+              border: '1px solid var(--paper-cream)', fontSize: 24,
+            }}
+          >−</button>
+          <button
+            type="button"
+            className="youre-up__btn uc"
+            aria-label="Raise pitch by one semitone"
+            onClick={() => onPitchChange(pitch + 1)}
+            style={{
+              minWidth: 56, minHeight: 56, padding: '8px 14px',
+              background: 'transparent', color: 'var(--paper-cream)',
+              border: '1px solid var(--paper-cream)', fontSize: 24,
+            }}
+          >+</button>
+        </div>
         <div className="uc" style={{ fontSize: 12, color: 'var(--paper-cream)', opacity: 0.7, letterSpacing: '0.2em' }}>
           source has override
         </div>
@@ -3518,9 +3914,10 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
 }
 ```
 
-Note: the inner `<KeyStepper readoutSize="lg" />` renders ± and a hanko readout; the visible "big readout" above is a separate element so the takeover's focal point looks like a stamp on the page (per §4.5). Both are wired to the same `pitch` state.
-
-The drag-to-change interaction is NOT implemented here (phase-2 flag-gated per spec). The buttons satisfy criterion #15.
+Notes:
+- Buttons use `.youre-up__btn` directly with explicit 56×56 px min sizing (≥ §5.4's 48 floor even on fine pointer — §3.2 mandates 48 always on the source strip and §5.4 §5.6 force 48 on `.youre-up__btn` on phones; the explicit min-width/height above keeps them ≥48 on desktop, satisfying both rules). The `.youre-up__btn` namespace is also used by the §5.5 `tap-flash` keyframes.
+- `KeyStepper` is no longer reused here — its `.hit-target` cascade drops to 32 px on fine pointer, which violates the takeover requirement. The big ± buttons above are takeover-specific and 56×56 always.
+- Drag-to-change is phase-2 (flag-gated per spec); buttons cover criterion #15.
 
 - [ ] **Step 3: Commit**
 
@@ -3545,19 +3942,20 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify: `src/app/page.tsx`
 
-**Context:** This task assembles every shared phone-shell piece built in Phases 1–2 and Phase 4:
-- Wraps everything in `<Toaster>` (provider form) and `<PendingAddsProvider>`.
+**Context:** This task assembles every shared phone-shell piece built in earlier tasks (the Toaster + PendingAddsProvider wrap was scaffolded in Task 10; here we replace the scaffold body with the real composition):
 - Renders `<Tabs>`, optional `<OfflineBanner>`, optional `<PendingAddsTray>`, and the active tab body (QueueView / SearchTab / PasteTab) OR the takeover (YoureUpView).
-- Owns the `--top-occluder-height` measurement via `useTopOccluderHeight`.
+- Owns the `--top-occluder-height` measurement via `useTopOccluderHeight`. The hook is fed an explicit `mountVersion` integer that bumps every time the offline banner or pending tray mounts/unmounts, so the sum recomputes even though the ref array length stays constant.
 - Sets `data-takeover-mounted` on `.phone-root` so the safe-area-inset-bottom owner switches per §5.4.
 - Implements the takeover precedence per §4.5 (idle wins over offline; same-user back-to-back keeps mounted).
-- Tracks an `incrementMutations` call on every outbound mutating message so `pendingAdds.classifyPendingState` advances the bounded-retry counter. The simplest hookup: monkey-patch `conn.send` is fragile; instead, expose a `useSendMutationTracked` helper inline that calls `incrementMutations()` whenever it sends one of the mutating types. The tabs / takeover / queue view already call `conn.send` directly today; for this iteration we wrap the same `conn.send` reference passed down to children with a tracked version.
+- Tracks an `incrementMutations` call on every outbound mutating message so `pendingAdds.classifyPendingState` advances the bounded-retry counter. We wrap the `conn` once and forward the tracked version to every child.
+- Implements the §5.4 keyboard-visibility behavior (visualViewport + focusin/focusout fallback, hysteresis, scrollIntoView).
+- Passes `isActive` and `queueLen` to `SearchTab`/`PasteTab` so their off-tab success path knows to fire the toast instead of switching.
 
 - [ ] **Step 1: Rewrite the file**
 
 ```tsx
 'use client'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NameEntry } from '@/components/phone/NameEntry'
 import { QueueView } from '@/components/phone/QueueView'
 import { SearchTab } from '@/components/phone/SearchTab'
@@ -3567,7 +3965,7 @@ import { Tabs, type Tab } from '@/components/phone/Tabs'
 import { OfflineBanner } from '@/components/phone/OfflineBanner'
 import { PendingAddsTray } from '@/components/phone/PendingAddsTray'
 import { Toaster } from '@/components/shared/Toaster'
-import { PendingAddsProvider, usePendingAdds } from '@/lib/client/pending-adds'
+import { PendingAddsProvider, usePendingAdds } from '@/lib/client/pending-adds-context'
 import { useTopOccluderHeight } from '@/lib/client/use-top-occluder-height'
 import { getSessionId, getStoredName, useConnection } from '@/lib/client/ws'
 import type { ClientMessage } from '@/lib/types/protocol'
@@ -3581,6 +3979,10 @@ const isMutatingClientMessage = (m: ClientMessage): boolean => {
   return MUTATING_PREFIXES.some((p) => m.type.startsWith(p))
 }
 
+// Wrap conn so mutating sends advance the pendingAdds mutation counter.
+// `useConnection` returns a fresh object every render; useMemo on `conn`
+// identity keeps the tracked wrapper stable across non-conn-changing renders
+// so children's useEffect deps don't churn.
 const useTrackedConn = (conn: Connection): Connection => {
   const { incrementMutations } = usePendingAdds()
   return useMemo<Connection>(() => ({
@@ -3590,6 +3992,81 @@ const useTrackedConn = (conn: Connection): Connection => {
       conn.send(msg)
     },
   }), [conn, incrementMutations])
+}
+
+// §5.4 iOS keyboard visibility — hysteresis + visualViewport + fallback.
+// Detects keyboard open/close and scrolls the focused input into view exactly
+// once per transition.
+const useKeyboardScrollIntoView = () => {
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    let keyboardOpen = false
+    let trailing: ReturnType<typeof setTimeout> | null = null
+
+    const scrollFocused = () => {
+      const a = document.activeElement as HTMLElement | null
+      if (!a) return
+      if (a.tagName !== 'INPUT' && a.tagName !== 'TEXTAREA') return
+      a.scrollIntoView({ block: 'center', behavior: 'auto' })
+    }
+
+    const handleResize = () => {
+      if (trailing) clearTimeout(trailing)
+      trailing = setTimeout(() => {
+        const vv = window.visualViewport
+        if (vv) {
+          const delta = window.innerHeight - vv.height
+          const OPEN_THRESHOLD = Math.max(120, window.innerHeight * 0.18)
+          const CLOSE_THRESHOLD = Math.max(80, window.innerHeight * 0.10)
+          const active = document.activeElement as HTMLElement | null
+          const isFormFocused = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
+          if (!keyboardOpen && delta > OPEN_THRESHOLD && isFormFocused) {
+            keyboardOpen = true
+            requestAnimationFrame(scrollFocused)
+          } else if (keyboardOpen && (delta < CLOSE_THRESHOLD || !isFormFocused)) {
+            keyboardOpen = false
+          }
+        } else {
+          // Fallback: rely on focusin/focusout + resize coincidence.
+          // (handleFocusIn manages keyboardOpen below.)
+        }
+      }, 50)
+    }
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!t) return
+      if (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA') return
+      if (window.visualViewport) return // primary path handles it
+      // Fallback: assume keyboard opens within 300 ms of focus on a form field.
+      setTimeout(() => {
+        if (document.activeElement === t) {
+          keyboardOpen = true
+          scrollFocused()
+        }
+      }, 300)
+    }
+    const handleFocusOut = () => {
+      keyboardOpen = false
+    }
+
+    const vv = window.visualViewport
+    if (vv) {
+      vv.addEventListener('resize', handleResize)
+    } else {
+      window.addEventListener('resize', handleResize)
+    }
+    document.addEventListener('focusin', handleFocusIn)
+    document.addEventListener('focusout', handleFocusOut)
+    return () => {
+      if (trailing) clearTimeout(trailing)
+      if (vv) vv.removeEventListener('resize', handleResize)
+      else window.removeEventListener('resize', handleResize)
+      document.removeEventListener('focusin', handleFocusIn)
+      document.removeEventListener('focusout', handleFocusOut)
+    }
+  }, [])
 }
 
 export default function Phone() {
@@ -3612,9 +4089,9 @@ const PhoneApp = () => {
   const baseConn = useConnection({ name })
   const conn = useTrackedConn(baseConn)
 
-  const tabsRef = useRef<HTMLElement>(null)
-  const offlineBannerRef = useRef<HTMLDivElement>(null)
-  const trayRef = useRef<HTMLDivElement>(null)
+  const tabsRef = useRef<HTMLElement | null>(null)
+  const offlineBannerRef = useRef<HTMLDivElement | null>(null)
+  const trayRef = useRef<HTMLDivElement | null>(null)
 
   const state = conn.state
   const sourceConnected = state?.sourceConnected ?? false
@@ -3626,21 +4103,23 @@ const PhoneApp = () => {
     player && player.status !== 'idle' && player.item.queuedBy.sessionId === sessionId
   const showTakeoverInQueueTab = isOwnTurn && tab === 'queue'
 
-  // §4.5: idle wins over offline — if the player is idle, the takeover must
-  // not render even if offline is true. The predicate above already covers
-  // this (`player.status !== 'idle'`).
-
   const { pendingAdds } = usePendingAdds()
   const currentEpoch = player && 'epoch' in player ? player.epoch : 0
 
-  // Build the dynamic ref array — refs are unmounted when their elements are.
+  // Mount-version: bumps whenever any of the conditionally-mounted occluders
+  // (offline banner, pending tray) flip their visibility. Drives the
+  // occluder-height hook to re-observe.
+  const mountVersion = (offline ? 1 : 0) + (pendingAdds.size > 0 ? 2 : 0)
   const refs = useMemo(() => [tabsRef, offlineBannerRef, trayRef], [])
-  useTopOccluderHeight(refs)
+  useTopOccluderHeight(refs, mountVersion)
 
-  // Switch tabs on "Added — N in queue" from SearchTab.
-  const onAddedSwitchToQueue = () => setTab('queue')
+  // §5.4 keyboard-visibility scroll.
+  useKeyboardScrollIntoView()
 
-  // §5.4 safe-area ownership flips when the takeover is mounted.
+  // Stable callback so child memoization doesn't break.
+  const onAddedSwitchToQueue = useCallback(() => setTab('queue'), [])
+
+  const queueLen = state?.queue.length ?? 0
   const takeoverMountedAttr = showTakeoverInQueueTab ? '1' : '0'
 
   if (!name) return <NameEntry onSubmit={setName} />
@@ -3653,7 +4132,7 @@ const PhoneApp = () => {
         activeTab={tab}
         onTabChange={setTab}
         onEditName={() => setName('')}
-        queueBadge={state?.queue.length}
+        queueBadge={queueLen}
       />
       {offline && <OfflineBanner ref={offlineBannerRef} />}
       {pendingAdds.size > 0 && (
@@ -3685,10 +4164,21 @@ const PhoneApp = () => {
             />
           )}
           {tab === 'search' && (
-            <SearchTab conn={conn} currentEpoch={currentEpoch} onAddedSwitchToQueue={onAddedSwitchToQueue} />
+            <SearchTab
+              conn={conn}
+              currentEpoch={currentEpoch}
+              isActive={tab === 'search'}
+              queueLen={queueLen}
+              onAddedSwitchToQueue={onAddedSwitchToQueue}
+            />
           )}
           {tab === 'paste' && (
-            <PasteTab conn={conn} currentEpoch={currentEpoch} />
+            <PasteTab
+              conn={conn}
+              currentEpoch={currentEpoch}
+              isActive={tab === 'paste'}
+              queueLen={queueLen}
+            />
           )}
         </main>
       )}
@@ -3697,9 +4187,7 @@ const PhoneApp = () => {
 }
 ```
 
-`useConnection` already returns a fresh `conn` object every render (per `src/lib/client/ws.ts`); `useTrackedConn` wraps that and forwards. Children that close over `conn` get the tracked send.
-
-**Caveat for the implementer:** `state.sourceConnected` / `state.sourceReady` are present on `ServerState` per the base spec. Verify the type by `grep "sourceConnected" src/lib/types/state.ts` — if absent, this task additionally needs to surface those flags through the snapshot. The current `Store.snapshot()` in `src/lib/server/store.ts` includes them per base spec §5.4 — verify before consuming.
+**Caveat for the implementer:** `state.sourceConnected` / `state.sourceReady` are present on `ServerState` per the base spec. Verify by `grep "sourceConnected" src/lib/types/state.ts` — if absent, this task additionally surfaces those flags through `Store.snapshot()`. The base spec mandates them in the state shape; if they're missing in the current code, add them with `boolean` types matching the existing `sourceReady` semantics before the rewrite compiles.
 
 - [ ] **Step 2: Smoke test**
 
@@ -3785,21 +4273,25 @@ For each section of the redesign spec, confirm the corresponding code path exist
 
 If any section is missing, file a fix task before moving on.
 
-- [ ] **Step 3: Commit the verification record**
+- [ ] **Step 3: Commit any inline fixes from this review**
 
-If any inline fixes are made during this review, commit them together:
+If the review found gaps, stage them by exact file path (avoid `git add -p`; it can't be scripted and the implementer here is a subagent following the plan verbatim). Use `git status --short` to list the modified files, copy the file names into the `git add` command, and commit with a one-line summary that names the §X.Y rules that were tightened.
 
 ```bash
-git add -p  # stage selectively
+git status --short
+# Example (replace with actual paths):
+# git add src/components/source/SetlistPanel.tsx src/components/phone/SearchTab.tsx
 git commit -m "$(cat <<'EOF'
-fix(ui): close gaps from final review pass
+fix(ui): close §X.Y / §Y.Z gaps from final review
 
-[Summarize what was fixed.]
+- <one-line on what was fixed, naming the spec sections that motivated each fix>
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
+
+If the review found zero issues, skip this step entirely — there is nothing to commit.
 
 ---
 
