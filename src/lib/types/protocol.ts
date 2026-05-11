@@ -15,7 +15,7 @@ export type ClientMutating =
 
 export type ClientNonMutating =
   | { type: 'join'; msgId: string; sessionId: string; name: string; sourceToken?: string }
-  | { type: 'source.ready'; msgId: string; sourceToken: string }
+  | { type: 'source.ready'; msgId: string; sourceToken?: string }
   | { type: 'search'; msgId: string; query: string }
   | { type: 'meta.fetch'; msgId: string; videoId: string }
 

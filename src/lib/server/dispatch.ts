@@ -12,7 +12,7 @@ import { canMove, canRemove, canSetLivePitch, canSetPrePitch, isSourceOnly } fro
 import { fetchMeta } from '@/lib/ytdlp/meta'
 import { RECENT_MSG_IDS_PER_SESSION, PITCH_MAX, PITCH_MIN } from '@/lib/config'
 
-export type Caller = { sessionId: string; isSource: boolean }
+export type Caller = { sessionId: string; isSource: boolean; isLocalhost?: boolean }
 
 export type IO = {
   send: (msg: ServerMessage) => void
@@ -91,7 +91,9 @@ export class Dispatcher {
         return
       }
       case 'source.ready': {
-        if (!this.store.verifySourceToken(msg.sourceToken)) {
+        // Localhost peers are trusted (this is the host machine itself).
+        // Non-localhost peers must still present the source token.
+        if (!caller.isLocalhost && !this.store.verifySourceToken(msg.sourceToken ?? '')) {
           this.io.send({ type: 'toast', level: 'warn', message: 'Invalid source token' })
           throw new Error('bad source token')
         }

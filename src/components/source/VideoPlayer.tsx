@@ -6,7 +6,7 @@ import { setAudioGraph } from '@/lib/client/audio-graph-ref'
 import type { Connection } from '@/lib/client/ws'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
 
-export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceToken: string }) => {
+export const VideoPlayer = ({ conn }: { conn: Connection }) => {
   const mountRef = useRef<HTMLDivElement>(null)
   const graphRef = useRef<AudioGraph | null>(null)
   const lastEpochRef = useRef<number>(-1)
@@ -19,7 +19,7 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
   const connRef = useRef(conn)
   useEffect(() => { connRef.current = conn })
 
-  // Mount the audio graph exactly once per `sourceToken`. Strict-mode double-effect handled
+  // Mount the audio graph exactly once. Strict-mode double-effect handled
   // via the `cancelled` flag: if we tear down before the async build resolves, destroy on arrival.
   useEffect(() => {
     let cancelled = false
@@ -38,7 +38,7 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
         graphRef.current = g
         setAudioGraph(g)
         setGraphReady(true)
-        connRef.current.send({ type: 'source.ready', msgId: randomUUID(), sourceToken })
+        connRef.current.send({ type: 'source.ready', msgId: randomUUID() })
         if (bypassed) {
           connRef.current.send({
             type: 'player.error', epoch: 0, itemId: '',
@@ -56,7 +56,7 @@ export const VideoPlayer = ({ conn, sourceToken }: { conn: Connection; sourceTok
       graphRef.current = null
       setGraphReady(false)
     }
-  }, [sourceToken])
+  }, [])
 
   // Sync src and pitch with server-driven player state
   useEffect(() => {

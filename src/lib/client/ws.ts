@@ -6,7 +6,6 @@ import type { ServerState } from '@/lib/types/state'
 
 const SESSION_KEY = 'karaoke.sessionId'
 const NAME_KEY = 'karaoke.name'
-const TOKEN_KEY = 'karaoke.sourceToken'
 
 export const getSessionId = () => {
   if (typeof window === 'undefined') return ''
@@ -22,10 +21,6 @@ export const getStoredName = () =>
   typeof window === 'undefined' ? '' : localStorage.getItem(NAME_KEY) ?? ''
 export const setStoredName = (name: string) => localStorage.setItem(NAME_KEY, name)
 
-export const getStoredSourceToken = () =>
-  typeof window === 'undefined' ? '' : localStorage.getItem(TOKEN_KEY) ?? ''
-export const setStoredSourceToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
-
 export type Connection = {
   state: ServerState | null
   send: (msg: ClientMessage) => void
@@ -35,7 +30,6 @@ export type Connection = {
 
 export const useConnection = (opts: {
   name: string
-  sourceToken?: string
   onMessage?: (msg: ServerMessage) => void
 }): Connection => {
   const [state, setState] = useState<ServerState | null>(null)
@@ -60,7 +54,6 @@ export const useConnection = (opts: {
           msgId: randomUUID(),
           sessionId,
           name: opts.name,
-          ...(opts.sourceToken ? { sourceToken: opts.sourceToken } : {}),
         } satisfies ClientMessage))
       })
       ws.addEventListener('message', (e) => {
@@ -92,7 +85,7 @@ export const useConnection = (opts: {
       alive = false
       wsRef.current?.close()
     }
-  }, [opts.name, opts.sourceToken, sessionId, onMessage])
+  }, [opts.name, sessionId, onMessage])
 
   const send = useCallback((msg: ClientMessage) => {
     wsRef.current?.send(JSON.stringify(msg))

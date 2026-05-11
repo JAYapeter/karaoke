@@ -85,6 +85,18 @@ describe('dispatcher', () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({ type: 'toast', message: 'Invalid source token' }))
   })
 
+  it('source.ready from localhost is accepted without a token', async () => {
+    // Server marks loopback peers as isLocalhost; the dispatcher trusts them
+    // unconditionally so the host machine doesn't have to type a token.
+    await d.handle({ sessionId: 'a', isSource: true, isLocalhost: true }, {
+      type: 'source.ready', msgId: 'sr-local',
+    })
+    expect(store.getSourceReady()).toBe(true)
+    expect(send).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'toast', message: 'Invalid source token' }),
+    )
+  })
+
   it('join uses caller.sessionId, ignores msg.sessionId mismatch', async () => {
     await d.handle({ sessionId: 'real-session', isSource: false }, {
       type: 'join', msgId: 'j1', sessionId: 'spoofed', name: 'Mallory',

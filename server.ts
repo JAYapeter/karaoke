@@ -30,7 +30,13 @@ type ClientCtx = {
   ws: import('ws').WebSocket
   sessionId: string
   isSource: boolean
+  isLocalhost: boolean
 }
+
+// Loopback peers are the host machine itself. We trust them as source authority
+// without a token, so the user doesn't have to type one to claim the TV display.
+const LOOPBACK_ADDRS = new Set(['::1', '127.0.0.1', '::ffff:127.0.0.1'])
+const isLoopback = (addr?: string) => !!addr && LOOPBACK_ADDRS.has(addr)
 
 const clients = new Set<ClientCtx>()
 
@@ -74,7 +80,6 @@ const printBanner = async () => {
   console.log('')
   console.log('  Karaoke server running')
   console.log(`  ${url}`)
-  console.log(`  Source token:  ${SOURCE_TOKEN}`)
   console.log('')
   console.log(qr)
 }
@@ -98,7 +103,8 @@ app.prepare().then(() => {
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url ?? '/ws', 'http://x')
     const sessionId = url.searchParams.get('sessionId') ?? randomBytes(8).toString('hex')
-    const ctx: ClientCtx = { ws, sessionId, isSource: false }
+    const localhost = isLoopback(req.socket.remoteAddress ?? undefined)
+    const ctx: ClientCtx = { ws, sessionId, isSource: false, isLocalhost: localhost }
     clients.add(ctx)
     const d = dispatcherFor(ctx)
 
@@ -108,15 +114,24 @@ app.prepare().then(() => {
     ws.on('message', async (raw) => {
       let msg: ClientMessage
       try { msg = JSON.parse(String(raw)) } catch { return }
-      if (msg.type === 'join' && msg.sourceToken !== undefined) {
-        if (store.verifySourceToken(msg.sourceToken)) {
-          ctx.isSource = true
-          store.setSourceConnected(true)
-        } else {
-          ws.send(JSON.stringify({ type: 'toast', level: 'warn', message: 'Invalid source token' } as ServerMessage))
+      if (msg.type === 'join') {
+        // Localhost is auto-trusted (the MacBook running this server IS the source).
+        // Non-localhost peers must still present the source token to claim authority.
+        if (ctx.isLocalhost) {
+          if (!ctx.isSource) {
+            ctx.isSource = true
+            store.setSourceConnected(true)
+          }
+        } else if (msg.sourceToken !== undefined) {
+          if (store.verifySourceToken(msg.sourceToken)) {
+            ctx.isSource = true
+            store.setSourceConnected(true)
+          } else {
+            ws.send(JSON.stringify({ type: 'toast', level: 'warn', message: 'Invalid source token' } as ServerMessage))
+          }
         }
       }
-      try { await d.handle({ sessionId: ctx.sessionId, isSource: ctx.isSource }, msg) }
+      try { await d.handle({ sessionId: ctx.sessionId, isSource: ctx.isSource, isLocalhost: ctx.isLocalhost }, msg) }
       catch (e) { log('warn', 'dispatcher error', { e: String(e) }) }
     })
 
