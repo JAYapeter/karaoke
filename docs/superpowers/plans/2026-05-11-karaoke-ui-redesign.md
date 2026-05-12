@@ -930,7 +930,7 @@ EOF
 
 ```tsx
 'use client'
-import { forwardRef, useEffect, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useState } from 'react'
 
 export type Tab = 'queue' | 'search' | 'paste'
 
@@ -971,11 +971,15 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
   // re-renders, so useEffect would never observe a non-null target.
   const [target, setTarget] = useState<HTMLElement | null>(null)
   useWriteTabsHeight(target)
-  const setRefs = (el: HTMLElement | null) => {
+  // useCallback so the ref attaches once per element (not per render).
+  // Without this, every parent re-render would generate a new callback ref,
+  // causing React to detach + reattach the ref and bouncing setTarget(null)
+  // / setTarget(el) — wasteful and triggers spurious useWriteTabsHeight runs.
+  const setRefs = useCallback((el: HTMLElement | null) => {
     setTarget(el)
     if (typeof ref === 'function') ref(el)
     else if (ref) ref.current = el
-  }
+  }, [ref])
 
   return (
     <header
