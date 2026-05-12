@@ -202,13 +202,18 @@ input, textarea, select { font-size: 16px; }
 .paper-card--accent { border-left: 4px solid var(--hanko-red); }
 .paper-card--minor { color: var(--ink-muted); }
 
-/* §5.4 safe-area ownership. Each owner is annotated where it's set. */
+/* §5.4 safe-area ownership. Each owner is annotated where it's set.
+   `.tabs` bakes 8px vertical + 12px horizontal breathing room into the
+   safe-area calc so the inline padding on <header> can be omitted —
+   inline `padding` shorthands would otherwise clobber padding-top and
+   strip the env(safe-area-inset-top) the class owns. */
 .tabs {
   position: sticky;
   top: 0;
-  padding-top: env(safe-area-inset-top); /* owns safe-area-inset-top */
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px); /* owns safe-area-inset-top */
+  padding-bottom: 8px;
+  padding-left: calc(env(safe-area-inset-left, 0px) + 12px);
+  padding-right: calc(env(safe-area-inset-right, 0px) + 12px);
 }
 .phone-root[data-takeover-mounted="0"] {
   padding-bottom: env(safe-area-inset-bottom); /* owns safe-area-inset-bottom */
@@ -220,20 +225,37 @@ input, textarea, select { font-size: 16px; }
   padding-right: env(safe-area-inset-right);
 }
 .youre-up__controls {
-  padding-bottom: env(safe-area-inset-bottom); /* owns safe-area-inset-bottom */
+  /* owns safe-area-inset-bottom. Padding shorthand below bakes 24px vertical
+     + 16px horizontal breathing room INTO the class so consumers don't need
+     to set inline `padding` shorthand (which would override the bottom-inset). */
+  padding: 24px 16px calc(env(safe-area-inset-bottom, 0px) + 24px) 16px;
 }
+/* .source-root padding includes safe-area insets AND 12px breathing room
+   on top/bottom. The later `.source-root` rule below sets `display: grid`
+   etc. — its `padding-block` was previously clobbering these insets, which
+   would let content run under the notch / home indicator. Merging the
+   vertical padding into a single calc() per side keeps the insets owned. */
 .source-root {
-  padding-top: env(safe-area-inset-top);
+  padding-top: calc(env(safe-area-inset-top) + 12px);
   padding-right: env(safe-area-inset-right);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
   padding-left: env(safe-area-inset-left);
 }
 .start-show-gesture,
 .source-offline,
-.source-idle-splash,
-.name-entry {
+.source-idle-splash {
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
            env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+/* .name-entry bakes 24px breathing room into the safe-area shorthand so the
+   component can drop its inline `padding: 24` (which otherwise clobbered the
+   class's safe-area shorthand). */
+.name-entry {
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 24px)
+    calc(env(safe-area-inset-right, 0px) + 24px)
+    calc(env(safe-area-inset-bottom, 0px) + 24px)
+    calc(env(safe-area-inset-left, 0px) + 24px);
 }
 
 /* In-frame overlay modifier — used by IdleSplash and SourceOfflineState when
@@ -249,12 +271,13 @@ input, textarea, select { font-size: 16px; }
   inset: 0;
 }
 
-/* §3 source grid. Desktop: video + 160px rail. Mobile: stacked. */
+/* §3 source grid. Desktop: video + 160px rail. Mobile: stacked.
+   Vertical padding is owned by the rule above (which includes safe-area
+   + 12px breathing room); this rule sets only grid layout. */
 .source-root {
   display: grid;
   grid-template-columns: 1fr 160px;
   gap: 12px;
-  padding-block: 12px;
 }
 .source-root__video { grid-column: 1; }
 .source-root__rail  { grid-column: 2; display: flex; flex-direction: column; gap: 10px; }
@@ -948,9 +971,10 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
       ref={setRefs}
       className="tabs"
       role="banner"
+      // NOTE: padding is owned by the .tabs CSS class (riso.css) so it can
+      // include env(safe-area-inset-top). Don't add a `padding` shorthand
+      // here — it would override the safe-area calc.
       style={{
-        position: 'sticky',
-        top: 0,
         zIndex: 5,
         display: 'flex',
         alignItems: 'center',
@@ -958,7 +982,6 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
         gap: 8,
         background: 'var(--ink-black)',
         borderBottom: '1px solid var(--ink-deep)',
-        padding: '8px 12px',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -2256,11 +2279,17 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
       if (e.key !== 'Tab') return
       const f = focusables()
       if (f.length === 0) { e.preventDefault(); return }
-      const first = f[0]!
-      const last = f[f.length - 1]!
       const active = document.activeElement as HTMLElement | null
-      if (e.shiftKey && active === first) { e.preventDefault(); last.focus() }
-      else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus() }
+      const idx = active ? f.indexOf(active) : -1
+      // Always handle Tab inside the modal — otherwise focus escapes to elements
+      // outside the dialog when the user tabs from the middle of the list.
+      e.preventDefault()
+      if (idx === -1) { f[0]!.focus(); return }
+      if (e.shiftKey) {
+        f[idx === 0 ? f.length - 1 : idx - 1]!.focus()
+      } else {
+        f[idx === f.length - 1 ? 0 : idx + 1]!.focus()
+      }
     }
     // Capture-phase keydown so we win over child handlers.
     window.addEventListener('keydown', onKey, true)
@@ -2771,31 +2800,7 @@ import { IdleSplash } from './IdleSplash'
 import { SourceOfflineState } from './SourceOfflineState'
 ```
 
-The `SourceOfflineState` component renders as an absolutely-positioned overlay matching `IdleSplash`'s positioning so it occupies the framed video area cleanly. Update its outer container style to match:
-
-```tsx
-// In src/components/source/SourceOfflineState.tsx — set position: absolute, inset: 0.
-```
-
-Replace the existing `SourceOfflineState.tsx` body with:
-
-```tsx
-'use client'
-export const SourceOfflineState = () => (
-  <div
-    className="source-offline source-offline--overlay"
-    style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: 'linear-gradient(135deg, var(--ink-deep), var(--ink-black))',
-      color: 'var(--riso-pink)',
-    }}
-  >
-    <div className="uc offline-banner" style={{ fontSize: 16, letterSpacing: '0.2em' }}>
-      ▌ source offline — reconnecting…
-    </div>
-  </div>
-)
-```
+Both `IdleSplash` and `SourceOfflineState` use the `--overlay` modifier class (defined in riso.css), which resets the page-root 100dvh + safe-area rules to `position: absolute; inset: 0`, fitting the parent video frame cleanly. No additional inline positioning is required — the class does the work.
 
 - [ ] **Step 5: Verify + commit**
 
@@ -3015,7 +3020,10 @@ export const NameEntry = ({ onSubmit }: { onSubmit: (n: string) => void }) => {
   return (
     <div
       className="name-entry"
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+      // padding is owned by the .name-entry class (riso.css) — safe-area +
+      // 24px breathing room baked in. Adding an inline `padding` shorthand
+      // here would clobber the safe-area calc.
+      style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
     >
       <form
         onSubmit={(e) => {
@@ -4260,7 +4268,7 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
           {player.item.queuedBy.name.toUpperCase()} · {fmtMmSs(player.item.durationSec)}
         </div>
       </div>
-      <div className="youre-up__controls" style={{ padding: '24px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 'auto', color: 'var(--paper-cream)' }}>
+      <div className="youre-up__controls" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 'auto', color: 'var(--paper-cream)' }}>
         <div className="uc" style={{ fontSize: 12, color: 'var(--paper-cream)', opacity: 0.8 }}>KEY</div>
         <div className="youre-up__readout" aria-live="polite" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 32, color: 'var(--hanko-red)' }}>
           {pitch >= 0 ? `+${pitch}` : pitch}
@@ -4709,12 +4717,14 @@ Open `http://localhost:3000/` on phone-width and full-width windows:
 git add src/app/page.tsx src/lib/types/state.ts src/lib/server/store.ts
 git commit -m "feat(phone): assemble PhoneRoot — tabs, banner, tray, takeover
 
-Wraps the phone client in Toaster + PendingAddsProvider. Mounts
-Tabs / OfflineBanner / PendingAddsTray as the chrome stack and
-either the active tab body or the YOU'RE UP takeover. Owns the
+Replaces Task 10's scaffolded body with the final composition.
+Mounts Tabs / OfflineBanner / PendingAddsTray as the chrome stack
+and renders all three tab bodies (visible one unhidden) with the
+takeover swapped in inside the queue tab branch. Owns the
 --top-occluder-height measurement and flips data-takeover-mounted
 for the §5.4 safe-area-inset-bottom owner. Outbound mutating sends
 are wrapped so pendingAdds advances mutationsSentSince.
+Implements the §5.4 visualViewport keyboard-scroll hook.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
@@ -4831,8 +4841,8 @@ When all criteria pass, the redesign is shipped. The next plan can layer the pha
 
 Run after writing the plan:
 
-- **Spec coverage**: every §3, §4, §5 subsection is mapped to a task (verified above).
-- **TokenEntry removal**: handled in Task 1 (spec sync) and unmounted in Task 11 (source page).
+- **Spec coverage**: every §3, §4, §5 subsection is mapped to a task (verified during plan authoring).
+- **TokenEntry removal**: commit `52e037a` already removed it; Task 1 is a no-op verification step (no spec edits — the spec's stale TokenEntry references are flagged but left in place). Task 11's `/source` rewrite skips the TokenEntry branch.
 - **Server protocol**: untouched per §7 of the redesign spec.
 - **Phase-2 drag**: deferred per §4.5 — buttons satisfy criterion #15 in Task 25.
 - **Test cadence**: TDD where it pays (marquee math, occluder hook, pendingAdds reducer, KeyStepper clamp); visual rendering verified in browser.
