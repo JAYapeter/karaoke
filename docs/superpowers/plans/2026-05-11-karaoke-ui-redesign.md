@@ -1026,7 +1026,7 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
               className="hit-target uc"
               style={{
                 padding: '8px 12px',
-                fontSize: 11,
+                fontSize: 12,
                 background: active ? 'var(--hanko-red)' : 'transparent',
                 color: 'var(--paper-cream)',
                 border: '1px solid transparent',
@@ -1590,7 +1590,7 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
                 padding: '6px 8px',
                 background: 'transparent',
                 color: cls === 'stale-visual' ? 'var(--riso-pink)' : 'var(--paper-cream)',
-                fontSize: 11,
+                fontSize: 12,
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -1836,11 +1836,11 @@ const PhoneApp = () => {
   return (
     <main style={{ paddingBottom: 140 }}>
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderBottom: '1px solid var(--ink-deep)' }}>
-        <div className="uc" style={{ fontSize: 11 }}>● {name}</div>
+        <div className="uc" style={{ fontSize: 12 }}>● {name}</div>
         <nav style={{ display: 'flex', gap: 8 }}>
           {(['queue', 'search', 'paste'] as Tab[]).map((t) => (
             <button key={t} onClick={() => setTab(t)} className="uc"
-              style={{ padding: '6px 10px', fontSize: 10, background: tab === t ? 'var(--hanko-red)' : 'transparent', color: 'var(--paper-cream)' }}>
+              style={{ padding: '6px 10px', fontSize: 12, background: tab === t ? 'var(--hanko-red)' : 'transparent', color: 'var(--paper-cream)' }}>
               {t}
             </button>
           ))}
@@ -2371,10 +2371,10 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
       </div>
       <div className="uc" style={{ fontSize: 13, wordBreak: 'break-all', textAlign: 'center' }}>{url}</div>
       <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className="hit-target uc" onClick={onCopy} style={{ padding: '8px 12px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 11 }}>
+        <button type="button" className="hit-target uc" onClick={onCopy} style={{ padding: '8px 12px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 12 }}>
           {copied ? 'copied' : 'copy URL'}
         </button>
-        <button ref={closeBtnRef} type="button" className="hit-target uc" aria-label="Close" onClick={onClose} style={{ padding: '8px 12px', background: 'transparent', color: 'var(--paper-cream)', border: '1px solid var(--paper-cream)', fontSize: 11 }}>
+        <button ref={closeBtnRef} type="button" className="hit-target uc" aria-label="Close" onClick={onClose} style={{ padding: '8px 12px', background: 'transparent', color: 'var(--paper-cream)', border: '1px solid var(--paper-cream)', fontSize: 12 }}>
           close
         </button>
       </div>
@@ -2528,7 +2528,7 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
     <div className="setlist-panel paper-card paper-grain">
       <div className="setlist-panel__header">
         {qrChip}
-        <div className="uc setlist-label" style={{ fontSize: 11 }}>SETLIST · {queue.length}</div>
+        <div className="uc setlist-label" style={{ fontSize: 12 }}>SETLIST · {queue.length}</div>
         <button
           type="button" className="shuffle-btn hit-target uc"
           aria-label="Shuffle queue" onClick={shuffle}
@@ -2556,7 +2556,7 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
         </div>
       ))}
       {more > 0 && (
-        <div className="uc" style={{ textAlign: 'center', padding: '6px 0', fontSize: 11, color: 'var(--ink-muted)' }}>
+        <div className="uc" style={{ textAlign: 'center', padding: '6px 0', fontSize: 12, color: 'var(--ink-muted)' }}>
           + {more} more
         </div>
       )}
@@ -2648,7 +2648,7 @@ export const VolumePanel = () => {
 
   return (
     <div className="paper-card paper-grain volume-panel" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <span className="uc" style={{ fontSize: 11 }}>VOL</span>
+      <span className="uc" style={{ fontSize: 12 }}>VOL</span>
       <div className="hit-target" style={{ flex: '1 1 auto', display: 'flex', alignItems: 'center' }}>
         <input type="range" min={0} max={1} step={0.01} value={volume}
           onChange={(e) => onChange(Number(e.target.value))}
@@ -3102,7 +3102,7 @@ export const NameEntry = ({ onSubmit }: { onSubmit: (n: string) => void }) => {
         <button
           type="submit"
           className="hit-target uc"
-          style={{ marginTop: 12, padding: '10px 16px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 11 }}
+          style={{ marginTop: 12, padding: '10px 16px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 12 }}
         >
           Sign in
         </button>
@@ -3184,7 +3184,7 @@ export const QueueView = ({ conn, sessionId, sourceConnected, sourceReady }: Pro
               {it.title}
             </div>
             {it.prePitch !== 0 && (
-              <div className="uc" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+              <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
                 KEY {it.prePitch > 0 ? '+' : ''}{it.prePitch}
               </div>
             )}
@@ -3219,7 +3219,7 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
   if (p.status === 'idle' && state.queue.length === 0) {
     return (
       <div className="paper-card paper-grain">
-        <div className="uc" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>▌ idle — queue something</div>
+        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>▌ idle — queue something</div>
       </div>
     )
   }
@@ -3230,7 +3230,7 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
       <div className="paper-card paper-grain paper-card--accent">
         <div className="next-up-badge uc" style={{ fontWeight: 700, color: 'var(--ink-black)' }}>▌ NEXT UP</div>
         <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 18 }}>{next.title}</div>
-        <div className="uc" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
           {next.queuedBy.name.toUpperCase()} · KEY {next.prePitch >= 0 ? '+' : ''}{next.prePitch}
         </div>
       </div>
@@ -3251,7 +3251,7 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
       <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 18 }}>
         {p.item.title}
       </div>
-      <div className="uc" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+      <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
         {p.item.queuedBy.name.toUpperCase()} · KEY {p.livePitch >= 0 ? '+' : ''}{p.livePitch}
       </div>
       <div style={{ marginTop: 6, height: 3, background: 'var(--ink-muted)' }}>
@@ -3575,7 +3575,7 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
           onClick={doSearch}
           disabled={activeSearchMsgId !== null || !q.trim()}
           aria-disabled={activeSearchMsgId !== null || !q.trim() || undefined}
-          style={{ padding: '10px 14px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 11 }}
+          style={{ padding: '10px 14px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 12 }}
         >
           {activeSearchMsgId !== null ? '…' : 'GO'}
         </button>
@@ -3585,7 +3585,7 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
             className="hit-target uc"
             onClick={cancelSearch}
             aria-label="Cancel current search"
-            style={{ padding: '10px 12px', background: 'transparent', color: 'var(--paper-cream)', border: '1px solid var(--paper-cream)', fontSize: 11 }}
+            style={{ padding: '10px 12px', background: 'transparent', color: 'var(--paper-cream)', border: '1px solid var(--paper-cream)', fontSize: 12 }}
           >× cancel</button>
         )}
       </div>
@@ -3733,7 +3733,7 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
               style={{
                 padding: '10px 16px',
                 background: isPending && !error && classification === 'queueing' ? 'var(--ink-muted)' : 'var(--hanko-red)',
-                color: 'var(--paper-cream)', fontSize: 11,
+                color: 'var(--paper-cream)', fontSize: 12,
               }}
             >
               {addLabel}
@@ -3750,10 +3750,10 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
           </div>
         </div>
         {error && (
-          <div className="uc" style={{ padding: '4px 10px', fontSize: 11, color: 'var(--riso-pink)' }}>▌ {error}</div>
+          <div className="uc" style={{ padding: '4px 10px', fontSize: 12, color: 'var(--riso-pink)' }}>▌ {error}</div>
         )}
         {classification === 'stale-visual' && !error && (
-          <div className="uc" style={{ padding: '4px 10px', fontSize: 11, color: 'var(--riso-pink)' }}>
+          <div className="uc" style={{ padding: '4px 10px', fontSize: 12, color: 'var(--riso-pink)' }}>
             ▌ expired (server may have applied this)
           </div>
         )}
@@ -4028,16 +4028,16 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
           disabled={busy || !url.trim()}
           aria-disabled={busy || !url.trim() || undefined}
           className="hit-target uc"
-          style={{ padding: '10px 14px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 11 }}
+          style={{ padding: '10px 14px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 12 }}
         >
           {busy ? 'Resolving…' : 'RESOLVE'}
         </button>
       </div>
-      {err && <div className="uc" style={{ fontSize: 11, color: 'var(--riso-pink)' }}>▌ {err}</div>}
+      {err && <div className="uc" style={{ fontSize: 12, color: 'var(--riso-pink)' }}>▌ {err}</div>}
       {meta && (
         <div className="paper-card paper-grain paper-card--accent">
           <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 16 }}>{meta.title}</div>
-          <div className="uc" style={{ fontSize: 11, color: 'var(--ink-muted)' }}>
+          <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
             {Math.floor(meta.durationSec / 60)}:{String(meta.durationSec % 60).padStart(2, '0')}
           </div>
           <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
@@ -4056,7 +4056,7 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
                 style={{
                   padding: '10px 16px',
                   background: classification === 'queueing' && !addError ? 'var(--ink-muted)' : 'var(--hanko-red)',
-                  color: 'var(--paper-cream)', fontSize: 11,
+                  color: 'var(--paper-cream)', fontSize: 12,
                 }}
               >
                 {addLabel}
@@ -4073,10 +4073,10 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
             </div>
           </div>
           {addError && (
-            <div className="uc" style={{ marginTop: 6, fontSize: 11, color: 'var(--riso-pink)' }}>▌ {addError}</div>
+            <div className="uc" style={{ marginTop: 6, fontSize: 12, color: 'var(--riso-pink)' }}>▌ {addError}</div>
           )}
           {classification === 'stale-visual' && !addError && (
-            <div className="uc" style={{ marginTop: 6, fontSize: 11, color: 'var(--riso-pink)' }}>
+            <div className="uc" style={{ marginTop: 6, fontSize: 12, color: 'var(--riso-pink)' }}>
               ▌ expired (server may have applied this)
             </div>
           )}
