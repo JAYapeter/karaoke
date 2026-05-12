@@ -3136,9 +3136,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```tsx
 'use client'
 import { randomUUID } from '@/lib/client/uuid'
-import { useEffect, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
-import type { QueueItem, PlayerState, ServerState } from '@/lib/types/state'
+import type { QueueItem, ServerState } from '@/lib/types/state'
 import { useToaster } from '@/components/shared/Toaster'
 
 const UNDO_TTL_MS = 6000
