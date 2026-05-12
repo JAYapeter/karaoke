@@ -4805,8 +4805,8 @@ Expected: no TS errors. Test count should be base 56 + new (marquee-math: 3, top
 For each section of the redesign spec, confirm the corresponding code path exists:
 - §3.1 grid layout → `.source-root` CSS + `source/page.tsx`
 - §3.2 video frame regions → `VideoPlayer.tsx` + `NowPlayingStrip.tsx`
-- §3.3 / §3.3-bis idle splash + transient skip → `IdleSplash.tsx`
-- §3.3a offline state → `SourceOfflineState.tsx` (exists; verify it's mounted from a top-level guard if applicable)
+- §3.3 / §3.3-bis idle splash + transient skip → `IdleSplash.tsx` mounted from `VideoPlayer.tsx` idle branch
+- §3.3a offline state → `SourceOfflineState.tsx` mounted from `VideoPlayer.tsx` when `!isPlaying && queue.length > 0 && (!sourceConnected || !sourceReady)`
 - §3.6 setlist row ⤴/✕ + undo → `SetlistPanel.tsx`
 - §4.2 queue card variants → `QueueView.tsx`
 - §4.3 inline-expand + pendingAdds + collapse contract → `SearchTab.tsx`
@@ -4815,7 +4815,7 @@ For each section of the redesign spec, confirm the corresponding code path exist
 - §4.6 NameEntry → `NameEntry.tsx`
 - §5.x cross-cutting → `riso.css` + `layout.tsx`
 
-If any section is missing, file a fix task before moving on.
+If any section is missing, fix inline in this task (Step 3) — do NOT defer to a new task. The implementer should make the smallest possible edit that satisfies the spec and commit.
 
 - [ ] **Step 3: Commit any inline fixes from this review**
 
