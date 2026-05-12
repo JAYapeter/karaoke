@@ -2419,13 +2419,14 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
       level: 'warn', message: `Removed: ${item.title}`, ttlMs: UNDO_TTL_MS,
       undo: { label: 'UNDO', onTap: () => {
         const addMsgId = randomUUID()
-        const sentAt = Date.now()
         const mySession = getSessionId()
-        // Two-step listener: first wait for the queue.add's state.ack ok=true,
-        // then scan the next queue update for an item owned by our session
-        // with matching videoId. Filtering by sessionId prevents matching a
-        // concurrent same-videoId add from another phone client.
-        let ackOk = false
+        // Snapshot the queue's current item IDs BEFORE sending the add. The
+        // newly-added item will appear in a state.queue / state.full update
+        // as an item whose id wasn't in the snapshot. Note: state.queue is
+        // broadcast BEFORE state.ack by the server's dispatcher (see
+        // dispatch.ts), so we must NOT gate the scan on the ack arriving
+        // first — we'd miss the very update that contains our new item.
+        const knownIds = new Set(queue.map((q) => q.id))
         let timeoutId: ReturnType<typeof setTimeout> | null = null
         const cleanup = () => {
           window.removeEventListener('karaoke-msg', onMsg)
@@ -2433,25 +2434,23 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
         }
         const onMsg = (e: Event) => {
           const m = (e as CustomEvent).detail as ServerMessage
-          if (m.type === 'state.ack' && m.msgId === addMsgId) {
-            if (!m.ok) { cleanup(); return }
-            ackOk = true
+          // ok=false ack short-circuits — the add was rejected, nothing to move.
+          if (m.type === 'state.ack' && m.msgId === addMsgId && !m.ok) {
+            cleanup()
             return
           }
-          if (!ackOk) return
           if (m.type !== 'state.queue' && m.type !== 'state.full') return
           const q = m.type === 'state.full' ? m.state.queue : m.queue
-          // Pick the newest item with matching videoId AND queuedBy.sessionId
-          // === mySession AND addedAt >= sentAt. The three-way filter survives
-          // (a) concurrent adds of the same videoId from other clients and
-          // (b) clock skew between client Date.now() and server addedAt — we
-          // require server's timestamp >= client's sentAt, which is true
-          // unless the server clock trails the client by >0 ms; in that edge
-          // case we'd skip the move (acceptable — song stays where add put it).
+          // The newly-added item is one whose id is NOT in the pre-add snapshot
+          // AND whose (videoId, queuedBy.sessionId) match our add. That two-way
+          // filter survives concurrent same-videoId adds from other clients
+          // AND clock skew (we don't depend on addedAt at all). Scan in reverse
+          // so the most-recent new entry wins if multiple were added concurrently
+          // (the previous queue snapshot rules out earlier additions).
           const candidate = [...q].reverse().find((it) =>
+            !knownIds.has(it.id) &&
             it.videoId === item.videoId &&
-            it.queuedBy.sessionId === mySession &&
-            it.addedAt >= sentAt
+            it.queuedBy.sessionId === mySession
           )
           if (!candidate) return
           if (originalIndex >= 0 && originalIndex < q.length) {
@@ -2539,32 +2538,32 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 
 **Files:**
 - Create: `src/components/source/VolumePanel.tsx`
-- Modify: `src/lib/client/audio-graph-ref.ts` (add subscribe API if missing)
 
-**Context:** §3.6 — slider 0–1 ties directly to `getAudioGraph().setVolume()`. Persisted to `localStorage["karaoke.volume"]`. Re-applied on every audio-graph subscribe callback (so unlocking after a reload restores the level).
+**Context:** §3.6 — slider 0–1 ties directly to `getAudioGraph().setVolume()`. Persisted to `localStorage["karaoke.volume"]`. Re-applied on every `subscribeAudioGraph` callback (so unlocking after a reload restores the level).
 
-- [ ] **Step 1: Add `subscribeAudioGraph` if missing**
+- [ ] **Step 1: Verify the subscribe API exists**
 
 ```bash
-grep -n "subscribe\|setVolume" /Users/jonathanyapeter/Documents/Karaoke\ App/src/lib/client/audio-graph-ref.ts
+grep -n "subscribeAudioGraph" /Users/jonathanyapeter/Documents/Karaoke\ App/src/lib/client/audio-graph-ref.ts
 ```
 
-If `subscribeAudioGraph` is not exported, edit the file to add a listener set. Pattern:
+Expected output: `export const subscribeAudioGraph = (cb: () => void): (() => void) => { ... }` (or equivalent). The current file (post-base implementation) already exports `subscribeAudioGraph` with a no-argument callback signature. If it's missing for any reason, add a minimal listener set that matches the existing pattern:
 
 ```ts
-const listeners = new Set<(g: AudioGraph | null) => void>()
-export const subscribeAudioGraph = (fn: (g: AudioGraph | null) => void): (() => void) => {
-  listeners.add(fn)
-  return () => { listeners.delete(fn) }
+// Add to src/lib/client/audio-graph-ref.ts
+const listeners = new Set<() => void>()
+export const subscribeAudioGraph = (cb: () => void): (() => void) => {
+  listeners.add(cb)
+  return () => { listeners.delete(cb) }
 }
-// In existing setAudioGraph:
+// And modify setAudioGraph to notify:
 export const setAudioGraph = (g: AudioGraph | null) => {
   current = g
-  for (const l of listeners) l(g)
+  for (const l of listeners) l()
 }
 ```
 
-Adapt to the file's actual shape.
+The VolumePanel below uses the no-argument form: `const apply = () => { getAudioGraph()?.setVolume(volumeRef.current) }`.
 
 - [ ] **Step 2: Create VolumePanel**
 
@@ -2618,7 +2617,10 @@ export const VolumePanel = () => {
 
 ```bash
 npx tsc --noEmit
-git add src/components/source/VolumePanel.tsx src/lib/client/audio-graph-ref.ts
+git add src/components/source/VolumePanel.tsx
+# Also stage src/lib/client/audio-graph-ref.ts ONLY if Step 1 actually edited it
+# (i.e., subscribeAudioGraph wasn't already exported). In the current
+# codebase it IS exported, so nothing to stage there.
 git commit -m "feat(source): add VolumePanel with localStorage persistence
 
 Re-applies persisted level on every audio-graph subscribe so the
