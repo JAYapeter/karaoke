@@ -131,15 +131,17 @@ input, textarea, select { font-size: 16px; }
   outline-offset: 2px;
 }
 
-/* §5.4 viewport units. vh first, dvh second. Every full-screen root.
-   .token-entry is intentionally absent — TokenEntry was removed. */
+/* §5.4 viewport units. vh first, dvh second. Every full-screen page root.
+   `.source-offline` and `.source-idle-splash` are intentionally absent — in
+   this implementation they render as absolute-positioned overlays inside the
+   `.source-root` video frame, never as page roots, so dvh + safe-area
+   ownership would conflict with their parent's 16:9 sizing.
+   `.token-entry` is also absent — TokenEntry was removed in commit 52e037a. */
 .page-root,
 .phone-root,
 .youre-up,
 .start-show-gesture,
 .source-root,
-.source-offline,
-.source-idle-splash,
 .name-entry {
   min-height: 100vh;
   min-height: 100dvh;
@@ -223,12 +225,13 @@ input, textarea, select { font-size: 16px; }
   padding-left: env(safe-area-inset-left);
 }
 .start-show-gesture,
-.source-offline,
-.source-idle-splash,
 .name-entry {
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
            env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
+/* `.source-offline` and `.source-idle-splash` are NOT in this list because
+   they render inside the video frame as absolutely-positioned overlays; the
+   `.source-root` page-root above owns the four safe-area insets for them. */
 
 /* §3 source grid. Desktop: video + 160px rail. Mobile: stacked. */
 .source-root {
@@ -1221,6 +1224,10 @@ Run: `npx vitest run tests/unit/pending-adds.test.ts`. Fails — module not foun
 export type PendingAdd = {
   msgId: string
   videoId: string
+  /** §4.3: tray displays title when known, falls back to videoId. Search
+   *  knows the title at add time; Paste resolves it first. The reducer
+   *  stores whatever the caller passes. */
+  title?: string
   prePitch: number
   sentAt: number
   mutationsSentSince: number
@@ -1230,7 +1237,7 @@ export type PendingAdd = {
 export type PendingAddsState = ReadonlyMap<string, PendingAdd>
 
 export type PendingAddsAction =
-  | { type: 'add'; msgId: string; videoId: string; prePitch: number; sentAt: number; epoch: number }
+  | { type: 'add'; msgId: string; videoId: string; title?: string; prePitch: number; sentAt: number; epoch: number }
   | { type: 'ack'; msgId: string; ok: boolean; error?: string }
   | { type: 'dismiss'; msgId: string }
   | { type: 'incrementMutations' }
@@ -1249,6 +1256,7 @@ export const pendingAddsReducer = (
       next.set(action.msgId, {
         msgId: action.msgId,
         videoId: action.videoId,
+        title: action.title,
         prePitch: action.prePitch,
         sentAt: action.sentAt,
         mutationsSentSince: 0,
@@ -1317,6 +1325,7 @@ The pure module above stays a `.ts` file with no React imports — so tests run 
 'use client'
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
 import type { ServerMessage } from '@/lib/types/protocol'
+import { useToaster } from '@/components/shared/Toaster'
 import {
   initialPendingAdds,
   pendingAddsReducer,
@@ -1325,7 +1334,7 @@ import {
 
 type Ctx = {
   pendingAdds: PendingAddsState
-  add: (msgId: string, videoId: string, prePitch: number, epoch: number) => void
+  add: (msgId: string, videoId: string, prePitch: number, epoch: number, title?: string) => void
   ack: (msgId: string, ok: boolean, error?: string) => void
   dismiss: (msgId: string) => void
   incrementMutations: () => void
@@ -1338,11 +1347,16 @@ const RECENT_ADD_WARNING_MS = 10_000
 
 export const PendingAddsProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(pendingAddsReducer, initialPendingAdds)
+  // Provider must be mounted INSIDE <Toaster> (see PhoneApp wrap). The Toaster
+  // provides the imperative showToast hook directly — calling it avoids the
+  // race where a synth-dispatched CustomEvent fires before Toaster's window
+  // listener mounts (it does in strict mode's first pass).
+  const { showToast } = useToaster()
 
   // §4.3 "Persistence across reloads + recent-add warning." pendingAdds is
   // in-memory only, so a phone reload drops the map. Mitigation: a single
-  // timestamp in localStorage. If a reload lands within 10 s, warn that a
-  // recent add may still be processing.
+  // timestamp in localStorage. If a reload lands within 10 s, warn the user
+  // a recent add may still be processing.
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
@@ -1352,20 +1366,17 @@ export const PendingAddsProvider = ({ children }: { children: ReactNode }) => {
       if (!isFinite(ts)) return
       const age = Date.now() - ts
       if (age >= 0 && age < RECENT_ADD_WARNING_MS) {
-        window.dispatchEvent(new CustomEvent('karaoke-msg', {
-          detail: {
-            type: 'toast',
-            level: 'warn',
-            message: 'A recent add may still be processing — wait a moment before retrying',
-          },
-        }))
+        showToast({
+          level: 'warn',
+          message: 'A recent add may still be processing — wait a moment before retrying',
+        })
       }
     } catch {
       // localStorage unavailable; silently skip.
     }
-  }, [])
-  const add = useCallback((msgId: string, videoId: string, prePitch: number, epoch: number) =>
-    dispatch({ type: 'add', msgId, videoId, prePitch, sentAt: Date.now(), epoch }), [])
+  }, [showToast])
+  const add = useCallback((msgId: string, videoId: string, prePitch: number, epoch: number, title?: string) =>
+    dispatch({ type: 'add', msgId, videoId, title, prePitch, sentAt: Date.now(), epoch }), [])
   const ack = useCallback((msgId: string, ok: boolean, error?: string) =>
     dispatch({ type: 'ack', msgId, ok, error }), [])
   const dismiss = useCallback((msgId: string) => dispatch({ type: 'dismiss', msgId }), [])
@@ -1496,6 +1507,7 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
     >
       {Array.from(pendingAdds.values()).map((entry) => {
         const cls = classifyPendingState(entry, { now, currentEpoch, ackedTimeoutMs: ACK_TIMEOUT_MS })
+        const displayName = entry.title ?? entry.videoId
         return (
           <div
             key={entry.msgId}
@@ -1504,7 +1516,7 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
             <button
               type="button"
               className="hit-target uc"
-              aria-label={`Retry pending add for ${entry.videoId}`}
+              aria-label={`Retry pending add for ${displayName}`}
               onClick={() => onRetry(entry.msgId)}
               style={{
                 flex: '1 1 auto',
@@ -1519,12 +1531,12 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
                 whiteSpace: 'nowrap',
               }}
             >
-              {entry.videoId} · key {entry.prePitch >= 0 ? '+' : ''}{entry.prePitch} · {labelFor(cls)}
+              {displayName} · key {entry.prePitch >= 0 ? '+' : ''}{entry.prePitch} · {labelFor(cls)}
             </button>
             <button
               type="button"
               className="hit-target uc"
-              aria-label={`Dismiss pending add for ${entry.videoId}`}
+              aria-label={`Dismiss pending add for ${displayName}`}
               onClick={() => dismiss(entry.msgId)}
               style={{ background: 'transparent', color: 'var(--riso-pink)', fontSize: 12 }}
             >
@@ -2325,6 +2337,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 import { randomUUID } from '@/lib/client/uuid'
 import type { Connection } from '@/lib/client/ws'
 import type { QueueItem } from '@/lib/types/state'
+import type { ServerMessage } from '@/lib/types/protocol'
 import { useToaster } from '@/components/shared/Toaster'
 
 const VISIBLE_CAP = 8
@@ -2344,16 +2357,47 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
   const shuffle = () => conn.send({ type: 'queue.shuffle', msgId: randomUUID() })
 
   const remove = (item: QueueItem) => {
+    const originalIndex = queue.findIndex((q) => q.id === item.id)
     conn.send({ type: 'queue.remove', msgId: randomUUID(), itemId: item.id })
-    // Undo can only re-add (best effort) — queue.add gives the song a NEW id
-    // server-side, so the original item.id can't be used in a follow-up
-    // queue.move. Spec §3.6 says "at the same position if possible";
-    // re-adding at the tail is the conservative behavior. Source has ⤴ to
-    // promote it back to position 1 if desired.
+    // §3.6 undo: re-add via queue.add and, when the re-added item appears in
+    // the queue snapshot, chain a queue.move to the original index. Since
+    // queue.add mints a NEW item.id server-side, we can't use the old id;
+    // we identify the new entry by listening for the next queue update and
+    // matching on (videoId, queuedBy.sessionId === source's session, addedAt >
+    // sentAt). "If possible" — if the queue update doesn't arrive within 4 s
+    // (e.g. server error), the move is skipped silently and the song stays
+    // wherever queue.add placed it.
     showToast({
       level: 'warn', message: `Removed: ${item.title}`, ttlMs: UNDO_TTL_MS,
       undo: { label: 'UNDO', onTap: () => {
-        conn.send({ type: 'queue.add', msgId: randomUUID(), videoId: item.videoId, prePitch: item.prePitch })
+        const addMsgId = randomUUID()
+        const sentAt = Date.now()
+        conn.send({ type: 'queue.add', msgId: addMsgId, videoId: item.videoId, prePitch: item.prePitch })
+
+        // Listen for the next state update where our new item appears.
+        let timeoutId: ReturnType<typeof setTimeout> | null = null
+        const onMsg = (e: Event) => {
+          const m = (e as CustomEvent).detail as ServerMessage
+          if (m.type !== 'state.queue' && m.type !== 'state.full') return
+          const q = m.type === 'state.full' ? m.state.queue : m.queue
+          // Match the most recent item with the same videoId added after our
+          // undo tap. On `/source`, this client IS the source, so its session
+          // owns any newly added item — but the spec writes the queue.add into
+          // the caller's session, which on /source maps to the source session.
+          // We match on videoId + addedAt > sentAt to stay robust.
+          const candidate = [...q].reverse().find((it) => it.videoId === item.videoId && it.addedAt >= sentAt)
+          if (!candidate) return
+          // Now move to original index if needed.
+          if (originalIndex >= 0 && originalIndex < q.length) {
+            conn.send({ type: 'queue.move', msgId: randomUUID(), itemId: candidate.id, toIndex: originalIndex })
+          }
+          window.removeEventListener('karaoke-msg', onMsg)
+          if (timeoutId) { clearTimeout(timeoutId); timeoutId = null }
+        }
+        window.addEventListener('karaoke-msg', onMsg)
+        timeoutId = setTimeout(() => {
+          window.removeEventListener('karaoke-msg', onMsg)
+        }, 4000)
       }},
     })
   }
@@ -3278,7 +3322,7 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
           setExpandedKey(null)
           onAddedSwitchToQueue()
         } else {
-          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue` })
+          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue`, ttlMs: 2000 })
         }
       } else {
         if (m.error) setErrorByMsg((prev) => ({ ...prev, [msgId]: m.error! }))
@@ -3355,7 +3399,7 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
       const cls = classifyPendingState(existing, { now, currentEpoch, ackedTimeoutMs: ADD_ACK_TIMEOUT_MS })
       if (cls === 'expired-window' || cls === 'stale-visual') {
         msgId = randomUUID()
-        addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch)
+        addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch, r.title)
         originatorRef.current.set(msgId, rk)
         addAckListener(msgId, rk)
       } else {
@@ -3363,7 +3407,7 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
       }
     } else {
       msgId = randomUUID()
-      addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch)
+      addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch, r.title)
       originatorRef.current.set(msgId, rk)
       addAckListener(msgId, rk)
     }
@@ -3411,7 +3455,7 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
         <button
           type="button"
           className="hit-target uc"
-          data-keyboard-primary-action
+          data-keyboard-primary-action="go"
           onClick={doSearch}
           disabled={activeSearchMsgId !== null || !q.trim()}
           aria-disabled={activeSearchMsgId !== null || !q.trim() || undefined}
@@ -3563,6 +3607,7 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <button
               type="button"
+              data-keyboard-primary-action={isExpanded ? 'add' : undefined}
               onClick={onAdd}
               disabled={lockAdd}
               aria-disabled={lockAdd || undefined}
@@ -3745,7 +3790,7 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
         if (isActiveRef.current) {
           setMeta(null); setUrl(''); setAddError(null)
         } else {
-          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue` })
+          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue`, ttlMs: 2000 })
         }
       } else if (m.error) {
         setAddError(m.error)
@@ -3810,7 +3855,7 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
       classification === 'stale-visual'
     const msgId = needNewMsgId ? randomUUID() : activeAddMsgId!
     if (needNewMsgId) {
-      addPending(msgId, meta.videoId, clampPitch(pitch), currentEpoch)
+      addPending(msgId, meta.videoId, clampPitch(pitch), currentEpoch, meta.title)
       setActiveAddMsgId(msgId)
       addAckListener(msgId)
     }
@@ -3853,7 +3898,7 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
         />
         <button
           type="button"
-          data-keyboard-primary-action
+          data-keyboard-primary-action="resolve"
           onClick={resolve}
           disabled={busy || !url.trim()}
           aria-disabled={busy || !url.trim() || undefined}
@@ -3878,6 +3923,7 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <button
                 type="button"
+                data-keyboard-primary-action="add"
                 onClick={doAdd}
                 disabled={lockAdd}
                 aria-disabled={lockAdd || undefined}
@@ -4284,18 +4330,21 @@ const isMutatingClientMessage = (m: ClientMessage): boolean => {
 }
 
 // Wrap conn so mutating sends advance the pendingAdds mutation counter.
-// `useConnection` returns a fresh object every render; useMemo on `conn`
-// identity keeps the tracked wrapper stable across non-conn-changing renders
-// so children's useEffect deps don't churn.
+// `useConnection` returns a fresh object every render; we keep the wrapped
+// `send` itself stable across renders by reading the latest `conn` from a
+// ref. The returned Connection object is still fresh per render (we expose
+// `state` / `ready` / `ack` from the latest conn), but consumers that close
+// over `send` get a stable reference, which keeps their useEffect deps
+// quiet.
 const useTrackedConn = (conn: Connection): Connection => {
   const { incrementMutations } = usePendingAdds()
-  return useMemo<Connection>(() => ({
-    ...conn,
-    send: (msg) => {
-      if (isMutatingClientMessage(msg)) incrementMutations()
-      conn.send(msg)
-    },
-  }), [conn, incrementMutations])
+  const connRef = useRef(conn)
+  connRef.current = conn
+  const send = useCallback<Connection['send']>((msg) => {
+    if (isMutatingClientMessage(msg)) incrementMutations()
+    connRef.current.send(msg)
+  }, [incrementMutations])
+  return { state: conn.state, ready: conn.ready, ack: conn.ack, send }
 }
 
 // §5.4 iOS keyboard visibility — hysteresis + visualViewport + focus-correlated
@@ -4315,17 +4364,20 @@ const useKeyboardScrollIntoView = () => {
       return !!a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA')
     }
 
-    // Best-effort primary-action lookup. The user's current tab determines
-    // which control is "primary". We tag the candidate controls in the
-    // component DOM so this lookup doesn't need to know about tab state:
-    //   - [data-keyboard-primary-action]: applied to GO / ADD / RESOLVE
-    //     buttons in their respective components.
-    // First visible occluded element wins.
+    // Best-effort primary-action lookup. Candidate controls tag themselves
+    // with `data-keyboard-primary-action="add" | "resolve" | "go"`. Priority
+    // is ADD > RESOLVE > GO — an expanded Search row's ADD button beats the
+    // GO button above it; a Paste preview's ADD beats RESOLVE. First visible
+    // tagged element of the highest-priority kind wins. Returns null if no
+    // tagged element is currently visible.
+    const PRIORITY: Array<'add' | 'resolve' | 'go'> = ['add', 'resolve', 'go']
     const primaryAction = (): HTMLElement | null => {
-      const els = document.querySelectorAll<HTMLElement>('[data-keyboard-primary-action]')
-      for (const el of els) {
-        if (el.offsetParent === null) continue
-        return el
+      for (const kind of PRIORITY) {
+        const els = document.querySelectorAll<HTMLElement>(`[data-keyboard-primary-action="${kind}"]`)
+        for (const el of els) {
+          if (el.offsetParent === null) continue
+          return el
+        }
       }
       return null
     }
@@ -4498,7 +4550,7 @@ const PhoneApp = () => {
             })
             if (cls === 'expired-window' || cls === 'stale-visual') {
               const newMsgId = randomUUID()
-              addPending(newMsgId, entry.videoId, entry.prePitch, currentEpoch)
+              addPending(newMsgId, entry.videoId, entry.prePitch, currentEpoch, entry.title)
               conn.send({ type: 'queue.add', msgId: newMsgId, videoId: entry.videoId, prePitch: entry.prePitch })
               return
             }
@@ -4508,16 +4560,22 @@ const PhoneApp = () => {
           }}
         />
       )}
-      {showTakeoverInQueueTab ? (
-        <YoureUpView
-          conn={conn}
-          player={player!}
-          sourceConnected={sourceConnected}
-          sourceReady={sourceReady}
-        />
-      ) : (
-        <main aria-label={tab === 'queue' ? 'Queue' : tab === 'search' ? 'Search' : 'Paste'}>
-          {tab === 'queue' && (
+      {/* All three tab bodies stay mounted across tab switches; only the
+          visible one is unhidden. Without this, switching away from Search/Paste
+          mid-flight unmounts the tab and tears down its per-msgId ack listener,
+          making the §4.3 off-tab "Added — N in queue" toast impossible.
+          The takeover lives INSIDE the queue tab branch per §4.5 ("Queue tab is
+          replaced entirely by the takeover; other tabs still navigable"). */}
+      <main aria-label={tab === 'queue' ? 'Queue' : tab === 'search' ? 'Search' : 'Paste'}>
+        <div hidden={tab !== 'queue'}>
+          {showTakeoverInQueueTab ? (
+            <YoureUpView
+              conn={conn}
+              player={player!}
+              sourceConnected={sourceConnected}
+              sourceReady={sourceReady}
+            />
+          ) : (
             <QueueView
               conn={conn}
               sessionId={sessionId}
@@ -4525,25 +4583,25 @@ const PhoneApp = () => {
               sourceReady={sourceReady}
             />
           )}
-          {tab === 'search' && (
-            <SearchTab
-              conn={conn}
-              currentEpoch={currentEpoch}
-              isActive={tab === 'search'}
-              queueLen={queueLen}
-              onAddedSwitchToQueue={onAddedSwitchToQueue}
-            />
-          )}
-          {tab === 'paste' && (
-            <PasteTab
-              conn={conn}
-              currentEpoch={currentEpoch}
-              isActive={tab === 'paste'}
-              queueLen={queueLen}
-            />
-          )}
-        </main>
-      )}
+        </div>
+        <div hidden={tab !== 'search'}>
+          <SearchTab
+            conn={conn}
+            currentEpoch={currentEpoch}
+            isActive={tab === 'search'}
+            queueLen={queueLen}
+            onAddedSwitchToQueue={onAddedSwitchToQueue}
+          />
+        </div>
+        <div hidden={tab !== 'paste'}>
+          <PasteTab
+            conn={conn}
+            currentEpoch={currentEpoch}
+            isActive={tab === 'paste'}
+            queueLen={queueLen}
+          />
+        </div>
+      </main>
     </div>
   )
 }
@@ -4637,20 +4695,19 @@ If any section is missing, file a fix task before moving on.
 
 - [ ] **Step 3: Commit any inline fixes from this review**
 
-If the review found gaps, stage them by exact file path (avoid `git add -p`; it can't be scripted and the implementer here is a subagent following the plan verbatim). Use `git status --short` to list the modified files, copy the file names into the `git add` command, and commit with a one-line summary that names the §X.Y rules that were tightened.
+If the review found gaps and you made code edits, list the actually-modified files with `git status --short`, stage them by exact path (avoid `git add -p`; it's interactive and not scriptable), then commit. The commit body should be one bullet per fix — each bullet names the file path and the concrete change, not a placeholder section reference. Pattern:
 
 ```bash
 git status --short
-# Example (replace with actual paths):
-# git add src/components/source/SetlistPanel.tsx src/components/phone/SearchTab.tsx
-git commit -m "$(cat <<'EOF'
-fix(ui): close §X.Y / §Y.Z gaps from final review
+# Read the output, then stage explicitly. Do not use git add -A or git add .
+# unless every untracked/modified file is intentional.
+git add <each modified path>
+git commit -m "fix(ui): close gaps from final review
 
-- <one-line on what was fixed, naming the spec sections that motivated each fix>
+- <component path>: <one-sentence on the concrete fix>
+- <component path>: <one-sentence on the concrete fix>
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
-EOF
-)"
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```
 
 If the review found zero issues, skip this step entirely — there is nothing to commit.
