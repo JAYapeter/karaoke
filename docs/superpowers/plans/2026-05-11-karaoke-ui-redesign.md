@@ -131,17 +131,21 @@ input, textarea, select { font-size: 16px; }
   outline-offset: 2px;
 }
 
-/* §5.4 viewport units. vh first, dvh second. Every full-screen page root.
-   `.source-offline` and `.source-idle-splash` are intentionally absent — in
-   this implementation they render as absolute-positioned overlays inside the
-   `.source-root` video frame, never as page roots, so dvh + safe-area
-   ownership would conflict with their parent's 16:9 sizing.
-   `.token-entry` is also absent — TokenEntry was removed in commit 52e037a. */
+/* §5.4 / §5.6 viewport units. vh first, dvh second. Every page-root class
+   declared in the spec, kept as the spec writes it so the source-of-truth
+   selector list stays implementable verbatim. The components in this plan
+   never render `.source-offline` / `.source-idle-splash` as page roots —
+   they use the `--overlay` modifier classes (defined below) when rendered
+   inside the `.source-root` video frame, so the page-root rules don't fire
+   in that case. `.token-entry` is absent — TokenEntry was removed in
+   commit 52e037a. */
 .page-root,
 .phone-root,
 .youre-up,
 .start-show-gesture,
 .source-root,
+.source-offline,
+.source-idle-splash,
 .name-entry {
   min-height: 100vh;
   min-height: 100dvh;
@@ -225,13 +229,25 @@ input, textarea, select { font-size: 16px; }
   padding-left: env(safe-area-inset-left);
 }
 .start-show-gesture,
+.source-offline,
+.source-idle-splash,
 .name-entry {
   padding: env(safe-area-inset-top) env(safe-area-inset-right)
            env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
-/* `.source-offline` and `.source-idle-splash` are NOT in this list because
-   they render inside the video frame as absolutely-positioned overlays; the
-   `.source-root` page-root above owns the four safe-area insets for them. */
+
+/* In-frame overlay modifier — used by IdleSplash and SourceOfflineState when
+   they render INSIDE the .source-root video frame. The base classes above
+   declare page-root behavior (100dvh + safe-area). The overlay modifiers
+   reset that to fill the parent frame instead. Same class names are used
+   in components: <div className="source-idle-splash source-idle-splash--overlay">. */
+.source-idle-splash--overlay,
+.source-offline--overlay {
+  min-height: 0;
+  padding: 0;
+  position: absolute;
+  inset: 0;
+}
 
 /* §3 source grid. Desktop: video + 160px rail. Mobile: stacked. */
 .source-root {
@@ -1574,7 +1590,8 @@ EOF
 **Files:**
 - Modify: `src/components/shared/Toaster.tsx`
 - Modify: `src/app/page.tsx` (scaffold — keeps existing children, just wraps them in `<Toaster><PendingAddsProvider>`)
-- Modify: `src/app/source/page.tsx` (scaffold — wraps existing return in `<Toaster>`)
+
+(`src/app/source/page.tsx` is rewritten in Task 11 — no edits to it in this task.)
 
 **Context:** §5.4 anchors the toaster at `top: var(--top-occluder-height, 0)` (it does NOT own a safe-area inset). §5.5 reduced-motion keeps the opacity fade and drops the translate. UNDO toasts are CLIENT-side only — we expose an imperative `showToast({ level, message, undo })` through a `useToaster()` context.
 
@@ -1653,7 +1670,8 @@ export const Toaster = ({ children }: { children?: ReactNode }) => {
         aria-atomic="true"
         style={{
           position: 'fixed',
-          top: 'calc(var(--top-occluder-height, 0px) + 12px)',
+          top: 'var(--top-occluder-height, 0px)',
+          paddingTop: 12, // breathing room between chrome and the first toast
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 1000,
@@ -2335,6 +2353,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ```tsx
 'use client'
 import { randomUUID } from '@/lib/client/uuid'
+import { getSessionId } from '@/lib/client/ws'
 import type { Connection } from '@/lib/client/ws'
 import type { QueueItem } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
@@ -2372,32 +2391,48 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
       undo: { label: 'UNDO', onTap: () => {
         const addMsgId = randomUUID()
         const sentAt = Date.now()
-        conn.send({ type: 'queue.add', msgId: addMsgId, videoId: item.videoId, prePitch: item.prePitch })
-
-        // Listen for the next state update where our new item appears.
+        const mySession = getSessionId()
+        // Two-step listener: first wait for the queue.add's state.ack ok=true,
+        // then scan the next queue update for an item owned by our session
+        // with matching videoId. Filtering by sessionId prevents matching a
+        // concurrent same-videoId add from another phone client.
+        let ackOk = false
         let timeoutId: ReturnType<typeof setTimeout> | null = null
-        const onMsg = (e: Event) => {
-          const m = (e as CustomEvent).detail as ServerMessage
-          if (m.type !== 'state.queue' && m.type !== 'state.full') return
-          const q = m.type === 'state.full' ? m.state.queue : m.queue
-          // Match the most recent item with the same videoId added after our
-          // undo tap. On `/source`, this client IS the source, so its session
-          // owns any newly added item — but the spec writes the queue.add into
-          // the caller's session, which on /source maps to the source session.
-          // We match on videoId + addedAt > sentAt to stay robust.
-          const candidate = [...q].reverse().find((it) => it.videoId === item.videoId && it.addedAt >= sentAt)
-          if (!candidate) return
-          // Now move to original index if needed.
-          if (originalIndex >= 0 && originalIndex < q.length) {
-            conn.send({ type: 'queue.move', msgId: randomUUID(), itemId: candidate.id, toIndex: originalIndex })
-          }
+        const cleanup = () => {
           window.removeEventListener('karaoke-msg', onMsg)
           if (timeoutId) { clearTimeout(timeoutId); timeoutId = null }
         }
+        const onMsg = (e: Event) => {
+          const m = (e as CustomEvent).detail as ServerMessage
+          if (m.type === 'state.ack' && m.msgId === addMsgId) {
+            if (!m.ok) { cleanup(); return }
+            ackOk = true
+            return
+          }
+          if (!ackOk) return
+          if (m.type !== 'state.queue' && m.type !== 'state.full') return
+          const q = m.type === 'state.full' ? m.state.queue : m.queue
+          // Pick the newest item with matching videoId AND queuedBy.sessionId
+          // === mySession AND addedAt >= sentAt. The three-way filter survives
+          // (a) concurrent adds of the same videoId from other clients and
+          // (b) clock skew between client Date.now() and server addedAt — we
+          // require server's timestamp >= client's sentAt, which is true
+          // unless the server clock trails the client by >0 ms; in that edge
+          // case we'd skip the move (acceptable — song stays where add put it).
+          const candidate = [...q].reverse().find((it) =>
+            it.videoId === item.videoId &&
+            it.queuedBy.sessionId === mySession &&
+            it.addedAt >= sentAt
+          )
+          if (!candidate) return
+          if (originalIndex >= 0 && originalIndex < q.length) {
+            conn.send({ type: 'queue.move', msgId: randomUUID(), itemId: candidate.id, toIndex: originalIndex })
+          }
+          cleanup()
+        }
         window.addEventListener('karaoke-msg', onMsg)
-        timeoutId = setTimeout(() => {
-          window.removeEventListener('karaoke-msg', onMsg)
-        }, 4000)
+        conn.send({ type: 'queue.add', msgId: addMsgId, videoId: item.videoId, prePitch: item.prePitch })
+        timeoutId = setTimeout(cleanup, 4000)
       }},
     })
   }
@@ -2604,9 +2639,10 @@ export const IdleSplash = ({ conn, transientWithQueue }: IdleSplashProps) => {
 
   return (
     <div
-      className="source-idle-splash"
+      // Overlay variant — `--overlay` resets 100dvh + safe-area to fill the
+      // parent video frame instead of the viewport.
+      className="source-idle-splash source-idle-splash--overlay"
       style={{
-        position: 'absolute', inset: 0,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         gap: 16, background: 'linear-gradient(135deg, var(--ink-deep), var(--ink-black))',
         color: 'var(--paper-cream)',
@@ -2632,9 +2668,11 @@ export const IdleSplash = ({ conn, transientWithQueue }: IdleSplashProps) => {
 
 ```tsx
 'use client'
+// Overlay variant: `source-offline--overlay` resets 100dvh + safe-area to fill
+// the parent video frame instead of the viewport. See riso.css.
 export const SourceOfflineState = () => (
   <div
-    className="source-offline"
+    className="source-offline source-offline--overlay"
     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--ink-deep), var(--ink-black))', color: 'var(--riso-pink)' }}
   >
     <div className="uc offline-banner" style={{ fontSize: 16, letterSpacing: '0.2em' }}>
@@ -2745,9 +2783,8 @@ Replace the existing `SourceOfflineState.tsx` body with:
 'use client'
 export const SourceOfflineState = () => (
   <div
-    className="source-offline"
+    className="source-offline source-offline--overlay"
     style={{
-      position: 'absolute', inset: 0,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'linear-gradient(135deg, var(--ink-deep), var(--ink-black))',
       color: 'var(--riso-pink)',
@@ -3288,6 +3325,8 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
   const now = usePendingTick(pendingAdds.size > 0)
   const isActiveRef = useRef(isActive)
   isActiveRef.current = isActive
+  const connRef = useRef(conn)
+  connRef.current = conn
   const expandedKeyRef = useRef(expandedKey)
   expandedKeyRef.current = expandedKey
   const queueLenRef = useRef(queueLen)
@@ -3301,6 +3340,17 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
     }
     ackListenersRef.current.clear()
   }, [])
+
+  // §4.3 canonical collapse contract: "Switching tabs collapses any expanded
+  // row." Tabs are now kept mounted (PhoneRoot uses `hidden` instead of
+  // unmounting), so this component watches its own `isActive` prop and
+  // collapses on each transition to inactive.
+  useEffect(() => {
+    if (!isActive) {
+      setExpandedKey(null)
+      setPitch(0)
+    }
+  }, [isActive])
 
   // Per-add success/failure side effects. The provider's global ack listener
   // already dispatches into pendingAdds; this listener is purely UX (switch
@@ -3322,7 +3372,13 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
           setExpandedKey(null)
           onAddedSwitchToQueue()
         } else {
-          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue`, ttlMs: 2000 })
+          // Use the freshest queue length from conn.state — the server's
+          // state.queue broadcast for this add typically lands before (or in
+          // the same dispatch as) the state.ack, so the count is already
+          // ticked. Fall back to queueLen+1 if state isn't yet observed.
+          const liveLen = connRef.current.state?.queue.length
+          const reportLen = typeof liveLen === 'number' ? liveLen : queueLenRef.current + 1
+          showToast({ level: 'info', message: `Added — ${reportLen} in queue`, ttlMs: 2000 })
         }
       } else {
         if (m.error) setErrorByMsg((prev) => ({ ...prev, [msgId]: m.error! }))
@@ -3767,6 +3823,8 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
   isActiveRef.current = isActive
   const queueLenRef = useRef(queueLen)
   queueLenRef.current = queueLen
+  const connRef = useRef(conn)
+  connRef.current = conn
 
   useEffect(() => () => {
     cleanupRef.current?.()
@@ -3790,7 +3848,9 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
         if (isActiveRef.current) {
           setMeta(null); setUrl(''); setAddError(null)
         } else {
-          showToast({ level: 'info', message: `Added — ${queueLenRef.current + 1} in queue`, ttlMs: 2000 })
+          const liveLen = connRef.current.state?.queue.length
+          const reportLen = typeof liveLen === 'number' ? liveLen : queueLenRef.current + 1
+          showToast({ level: 'info', message: `Added — ${reportLen} in queue`, ttlMs: 2000 })
         }
       } else if (m.error) {
         setAddError(m.error)
@@ -4055,6 +4115,10 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
 
   const [pitch, setPitch] = useState(player.livePitch)
   const pendingRef = useRef<PendingPitch | null>(null)
+  // Latest server-authoritative livePitch so the ack handler can snap the
+  // local readout back if the server rejects our value (§3.3a).
+  const serverPitchRef = useRef(player.livePitch)
+  serverPitchRef.current = player.livePitch
 
   const clearPendingTimer = () => {
     const p = pendingRef.current
@@ -4082,12 +4146,15 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
       const p = pendingRef.current
       if (!p || p.msgId !== m.msgId) return
       // §3.3a: on ok=true we clear pending and let server-driven livePitch
-      // sync the readout. On ok=false we ALSO drop pending silently — the
-      // server has explicitly rejected this value, so retrying would just
-      // replay the same failure. The next sync from server livePitch is
-      // ground truth.
+      // sync the readout. On ok=false we ALSO drop pending silently AND snap
+      // the local pitch back to the server's authoritative value — otherwise
+      // the readout would keep showing the rejected user-tapped value
+      // indefinitely.
       clearPendingTimer()
       pendingRef.current = null
+      if (!m.ok) {
+        setPitch(serverPitchRef.current)
+      }
     }
     window.addEventListener('karaoke-msg', handler)
     return () => window.removeEventListener('karaoke-msg', handler)
