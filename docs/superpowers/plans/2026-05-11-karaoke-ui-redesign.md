@@ -409,8 +409,13 @@ input, textarea, select { font-size: 16px; }
   .marquee[data-overflow="1"] > span { animation: none; transform: translateX(0); }
 }
 
-/* §3.5 / §5.6 youre-up takeover. */
+/* §3.5 / §5.6 youre-up takeover. Flex column so the controls panel (which
+   sets `margin-top: auto` inline) is pushed to the bottom of the visible
+   takeover area — matches the §4.5 ASCII layout (sub-header / title / spacer
+   / controls + "SOURCE HAS OVERRIDE" footnote). */
 .youre-up {
+  display: flex;
+  flex-direction: column;
   min-height: calc(100vh - var(--top-occluder-height));
   min-height: calc(100dvh - var(--top-occluder-height));
 }
@@ -1076,9 +1081,15 @@ export const OfflineBanner = forwardRef<HTMLDivElement>(function OfflineBanner(_
       className="offline-banner uc"
       role="status"
       aria-live="polite"
+      // Not sticky — flows in document order below the sticky <Tabs> header.
+      // Multiple sticky-at-same-top siblings would overlap (browser stacks
+      // them at the same y-offset, not cascading). The Tabs header alone is
+      // sticky; OfflineBanner + PendingAddsTray scroll with content. The
+      // banner remains visible at initial scroll position (top of page);
+      // when the user scrolls down through tab content it scrolls away
+      // — acceptable since the takeover-banner-replacement and the queue
+      // card's `▌ OFFLINE` badge keep the offline state visible elsewhere.
       style={{
-        position: 'sticky',
-        top: 'var(--tabs-height)',
         zIndex: 4,
         padding: '6px 12px',
         background: 'var(--ink-deep)',
@@ -1538,9 +1549,9 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
       className="pending-adds-tray"
       role="region"
       aria-label="Pending adds"
+      // Not sticky — flows in document order below the OfflineBanner. See
+      // the OfflineBanner comment for the cascade rationale.
       style={{
-        position: 'sticky',
-        top: 'calc(var(--tabs-height))',
         zIndex: 3,
         background: 'var(--ink-deep)',
         borderBottom: '1px solid var(--ink-black)',
