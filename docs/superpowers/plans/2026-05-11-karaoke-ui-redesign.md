@@ -1713,7 +1713,7 @@ const ToastItem = ({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       }}
     >
       <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-        <div className="uc" style={{ fontSize: 9, color: COLORS[toast.level], marginBottom: 2 }}>{toast.level}</div>
+        <div className="uc" style={{ fontSize: 12, color: COLORS[toast.level], marginBottom: 2 }}>{toast.level}</div>
         <div style={{ fontFamily: 'var(--mono-font)', fontSize: 12, wordBreak: 'break-word' }}>{toast.message}</div>
       </div>
       {toast.undo && (
@@ -1726,7 +1726,7 @@ const ToastItem = ({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
             color: COLORS[toast.level],
             border: `1px solid ${COLORS[toast.level]}`,
             padding: '6px 10px',
-            fontSize: 10,
+            fontSize: 12,
           }}
         >
           {toast.undo.label}
@@ -1922,7 +1922,7 @@ export default function Source() {
     return (
       <div className="page-root" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div className="paper-card paper-grain" style={{ maxWidth: 420 }}>
-          <div className="uc" style={{ fontSize: 10, color: 'var(--ink-muted)' }}>▌ wrong device</div>
+          <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>▌ wrong device</div>
           <h2 style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 22, margin: '8px 0 12px' }}>
             Open this page on the host machine.
           </h2>
@@ -2544,7 +2544,7 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
       {visible.map((it, i) => (
         <div key={it.id} className={`setlist-row ${i > 0 ? 'paper-card--minor' : ''}`} style={{ padding: '4px 0' }}>
           <div className="setlist-row__title">
-            <span className="uc" style={{ fontSize: 10, color: 'var(--ink-muted)', marginRight: 8 }}>
+            <span className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)', marginRight: 8 }}>
               {String(i + 2).padStart(2, '0')} · {it.queuedBy.name.toUpperCase()}
             </span>
             <span style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 14 }}>{it.title}</span>
@@ -3082,7 +3082,7 @@ export const NameEntry = ({ onSubmit }: { onSubmit: (n: string) => void }) => {
         className="paper-card paper-grain"
         style={{ width: 360, maxWidth: '100%' }}
       >
-        <div className="uc" style={{ fontSize: 10, color: 'var(--ink-muted)' }}>▌ enter the room</div>
+        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>▌ enter the room</div>
         <h2 style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 22, margin: '8px 0 12px' }}>
           What&apos;s your name?
         </h2>
