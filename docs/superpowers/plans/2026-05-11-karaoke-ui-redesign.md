@@ -1547,6 +1547,9 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
       {Array.from(pendingAdds.values()).map((entry) => {
         const cls = classifyPendingState(entry, { now, currentEpoch, ackedTimeoutMs: ACK_TIMEOUT_MS })
         const displayName = entry.title ?? entry.videoId
+        // §4.3: stale-visual (5+ min) allows ONLY dismiss; retry is removed.
+        // expired-window / retry / queueing all use the primary tap.
+        const allowRetry = cls !== 'stale-visual'
         return (
           <div
             key={entry.msgId}
@@ -1555,8 +1558,10 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
             <button
               type="button"
               className="hit-target uc"
-              aria-label={`Retry pending add for ${displayName}`}
-              onClick={() => onRetry(entry.msgId)}
+              aria-label={allowRetry ? `Retry pending add for ${displayName}` : `${displayName} expired — dismiss with ×`}
+              onClick={() => { if (allowRetry) onRetry(entry.msgId) }}
+              disabled={!allowRetry}
+              aria-disabled={!allowRetry || undefined}
               style={{
                 flex: '1 1 auto',
                 minWidth: 0,
@@ -1575,7 +1580,7 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
             <button
               type="button"
               className="hit-target uc"
-              aria-label={`Dismiss pending add for ${displayName}`}
+              aria-label={cls === 'stale-visual' ? `Dismiss expired add for ${displayName}` : `Cancel pending add for ${displayName}`}
               onClick={() => dismiss(entry.msgId)}
               style={{ background: 'transparent', color: 'var(--riso-pink)', fontSize: 12 }}
             >
@@ -1660,6 +1665,56 @@ export const useToaster = (): Ctx => {
   return v
 }
 
+// Each toast wraps its element in a small mount component so the `.toast`
+// CSS transition from opacity:0 / translateY(-8px) → visible can fire. The
+// element mounts with data-visible="0" (matching the .toast base rule),
+// then flips to "1" after the first paint via rAF. Without this two-phase
+// render the data-visible attribute would always be "1" and the §5.5 mount
+// animation would never play.
+const ToastItem = ({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) => {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setVisible(true))
+    return () => cancelAnimationFrame(id)
+  }, [])
+  return (
+    <div
+      className="paper-card paper-grain toast"
+      data-visible={visible ? '1' : '0'}
+      style={{
+        pointerEvents: 'auto',
+        minWidth: 220,
+        maxWidth: 360,
+        borderLeft: `4px solid ${COLORS[toast.level]}`,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}
+    >
+      <div style={{ flex: '1 1 auto', minWidth: 0 }}>
+        <div className="uc" style={{ fontSize: 9, color: COLORS[toast.level], marginBottom: 2 }}>{toast.level}</div>
+        <div style={{ fontFamily: 'var(--mono-font)', fontSize: 12, wordBreak: 'break-word' }}>{toast.message}</div>
+      </div>
+      {toast.undo && (
+        <button
+          type="button"
+          className="hit-target uc"
+          onClick={() => { toast.undo!.onTap(); onDismiss() }}
+          style={{
+            background: 'transparent',
+            color: COLORS[toast.level],
+            border: `1px solid ${COLORS[toast.level]}`,
+            padding: '6px 10px',
+            fontSize: 10,
+          }}
+        >
+          {toast.undo.label}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export const Toaster = ({ children }: { children?: ReactNode }) => {
   const [toasts, setToasts] = useState<Toast[]>([])
   const nextIdRef = useRef(1)
@@ -1706,44 +1761,11 @@ export const Toaster = ({ children }: { children?: ReactNode }) => {
         }}
       >
         {toasts.map((t) => (
-          <div
+          <ToastItem
             key={t.id}
-            className="paper-card paper-grain toast"
-            data-visible="1"
-            style={{
-              pointerEvents: 'auto',
-              minWidth: 220,
-              maxWidth: 360,
-              borderLeft: `4px solid ${COLORS[t.level]}`,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-            }}
-          >
-            <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-              <div className="uc" style={{ fontSize: 9, color: COLORS[t.level], marginBottom: 2 }}>{t.level}</div>
-              <div style={{ fontFamily: 'var(--mono-font)', fontSize: 12, wordBreak: 'break-word' }}>{t.message}</div>
-            </div>
-            {t.undo && (
-              <button
-                type="button"
-                className="hit-target uc"
-                onClick={() => {
-                  t.undo!.onTap()
-                  setToasts((cur) => cur.filter((x) => x.id !== t.id))
-                }}
-                style={{
-                  background: 'transparent',
-                  color: COLORS[t.level],
-                  border: `1px solid ${COLORS[t.level]}`,
-                  padding: '6px 10px',
-                  fontSize: 10,
-                }}
-              >
-                {t.undo.label}
-              </button>
-            )}
-          </div>
+            toast={t}
+            onDismiss={() => setToasts((cur) => cur.filter((x) => x.id !== t.id))}
+          />
         ))}
       </div>
     </ToasterContext.Provider>
@@ -3456,14 +3478,19 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
 
   const doAdd = (r: SearchResult, rk: string) => {
     const existing = pendingForRow(rk)
-    // §4.3 bounded-retry-window: when classification is 'expired-window',
-    // retry with a NEW msgId (the server may already have the original; we
-    // accept dup risk for "start new add anyway"). Otherwise reuse the msgId
-    // for same-msgId retry.
+    // §4.3 bounded-retry-window:
+    //   - queueing/retry: reuse existing msgId (server dedup short-circuits).
+    //   - expired-window: mint a NEW msgId — user accepted dup risk via the
+    //     "start new add anyway" affordance.
+    //   - stale-visual: per spec line 329, "Tapping dismiss removes the entry
+    //     from the map; NOTHING ELSE does at this stage." → tap is a no-op.
     let msgId: string
     if (existing) {
       const cls = classifyPendingState(existing, { now, currentEpoch, ackedTimeoutMs: ADD_ACK_TIMEOUT_MS })
-      if (cls === 'expired-window' || cls === 'stale-visual') {
+      if (cls === 'stale-visual') {
+        return // 5+ min stale — only dismiss is allowed, no retry.
+      }
+      if (cls === 'expired-window') {
         msgId = randomUUID()
         addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch, r.title)
         originatorRef.current.set(msgId, rk)
@@ -3593,13 +3620,14 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
   // locked only during 'queueing' so the row layout doesn't shift mid-flight.
   const isQueueing = classification === 'queueing'
   const lockToggle = isQueueing
-  const lockAdd = isQueueing && !error
+  // §4.3 line 329: stale-visual allows ONLY dismiss — ADD is locked.
+  const lockAdd = (isQueueing && !error) || classification === 'stale-visual'
   const addLabel =
     !isPending ? 'ADD'
     : error ? 'tap to retry'
     : classification === 'retry' ? 'tap to retry'
     : classification === 'expired-window' ? 'start new add anyway'
-    : classification === 'stale-visual' ? 'start new add anyway'
+    : classification === 'stale-visual' ? 'expired'
     : 'queueing…'
 
   // §5.5 search-row expand/collapse — measure the body's natural height so the
@@ -3916,13 +3944,14 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
     if (!meta) return
     const isQueueing = classification === 'queueing'
     if (isQueueing && !addError) return // pending lock during in-flight
-    // §4.3 bounded-retry-window: on expired-window/stale-visual the user explicitly
-    // accepts dup risk; mint a new msgId. On retry/error, reuse the same msgId so
-    // server dedup short-circuits if the server already saw it.
+    // §4.3 line 329: stale-visual is dismiss-only. Tap is a no-op.
+    if (classification === 'stale-visual') return
+    // §4.3 bounded-retry-window: on expired-window the user explicitly
+    // accepts dup risk; mint a new msgId. On retry/error, reuse the same msgId
+    // so server dedup short-circuits if the server already saw it.
     const needNewMsgId =
       !activeAddMsgId ||
-      classification === 'expired-window' ||
-      classification === 'stale-visual'
+      classification === 'expired-window'
     const msgId = needNewMsgId ? randomUUID() : activeAddMsgId!
     if (needNewMsgId) {
       addPending(msgId, meta.videoId, clampPitch(pitch), currentEpoch, meta.title)
@@ -3945,13 +3974,15 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
     setAddError(null)
   }
 
-  const lockAdd = classification === 'queueing' && !addError
+  // §4.3 line 329: stale-visual allows ONLY dismiss — ADD is locked.
+  const lockAdd = (classification === 'queueing' && !addError) || classification === 'stale-visual'
 
   const addLabel =
     !activePending ? 'ADD'
     : addError ? 'tap to retry'
     : classification === 'retry' ? 'tap to retry'
-    : classification === 'expired-window' || classification === 'stale-visual' ? 'start new add anyway'
+    : classification === 'expired-window' ? 'start new add anyway'
+    : classification === 'stale-visual' ? 'expired'
     : 'queueing…'
 
   return (
@@ -4617,15 +4648,19 @@ const PhoneApp = () => {
           onRetry={(msgId) => {
             const entry = pendingAdds.get(msgId)
             if (!entry) return
-            // §4.3 bounded-retry-window: when the entry has crossed any of the
-            // three thresholds, the tray's "start new add anyway" affordance
-            // must mint a fresh msgId — the user has accepted dup risk.
             const cls = classifyPendingState(entry, {
               now: Date.now(),
               currentEpoch,
               ackedTimeoutMs: 6000,
             })
-            if (cls === 'expired-window' || cls === 'stale-visual') {
+            // §4.3 line 329: stale-visual is dismiss-only — the tray button is
+            // disabled at that classification so this code path shouldn't run,
+            // but ignore defensively.
+            if (cls === 'stale-visual') return
+            // §4.3 bounded-retry-window: when the entry crosses the threshold
+            // (expired-window), the tray's "start new add anyway" affordance
+            // mints a fresh msgId — the user has accepted dup risk.
+            if (cls === 'expired-window') {
               const newMsgId = randomUUID()
               addPending(newMsgId, entry.videoId, entry.prePitch, currentEpoch, entry.title)
               conn.send({ type: 'queue.add', msgId: newMsgId, videoId: entry.videoId, prePitch: entry.prePitch })
