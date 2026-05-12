@@ -2060,7 +2060,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 **Files:**
 - Modify: `src/components/source/VideoPlayer.tsx`
 
-**Context:** §3.2 — frame contains a `▌ LIVE 出演中` badge state machine and the bottom strip. The audio-graph mount keeps writing into the inner mount div; we wrap it. The component should also render `IdleSplash` when `player.status === 'idle'` (the splash component is created in Task 18 — we add the import + branch now and the file will exist after Task 18; if necessary, stub `IdleSplash` as a one-line export to keep TS happy while sequencing, or do this task AFTER Task 18 lands).
+**Context:** §3.2 — frame contains a `▌ LIVE 出演中` badge state machine and the bottom strip. The audio-graph mount keeps writing into the inner mount div; we wrap it. This task ONLY adds the framed layout + LIVE badge + NowPlayingStrip in the `isPlaying` branch — the idle/offline branch (IdleSplash, SourceOfflineState) is hooked up later in Task 18, after those components are created.
 
 **Sequencing note:** This task assumes Task 18 (IdleSplash) lands first. Reorder if executing sequentially: 18 before 13.
 
