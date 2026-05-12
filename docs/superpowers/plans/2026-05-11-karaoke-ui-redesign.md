@@ -439,7 +439,13 @@ input, textarea, select { font-size: 16px; }
   }
 }
 
-/* §3.5 phone-width source layout. */
+/* §3.5 phone-width source layout.
+   Desktop default for .now-playing-strip lives here so inline `padding`
+   on the component can be dropped — otherwise inline `padding: 8 12`
+   would override the spec'd phone `padding: 8 10` below. */
+.now-playing-strip {
+  padding: 8px 12px;
+}
 @media (max-width: 720px) {
   .now-playing-strip {
     display: flex;
@@ -1989,9 +1995,12 @@ export const NowPlayingStrip = ({ conn, player }: { conn: Connection; player: Ex
   return (
     <div
       className="now-playing-strip paper-card paper-grain"
+      // padding is owned by the .now-playing-strip class (riso.css):
+      // desktop 8px 12px, phone 8px 10px per §5.6. Adding inline `padding`
+      // shorthand would clobber the mobile override.
       style={{
         position: 'absolute', left: 0, right: 0, bottom: 0,
-        padding: '8px 12px', display: 'flex', alignItems: 'center', gap: 12,
+        display: 'flex', alignItems: 'center', gap: 12,
       }}
     >
       <div className="now-playing-strip__text" style={{ flex: '1 1 auto', minWidth: 0 }}>
@@ -3614,13 +3623,14 @@ type SearchRowProps = {
 
 const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAdd, pending, classification, error, onCancelPending }: SearchRowProps) => {
   const isPending = !!pending
-  // §4.3: ADD button + stepper are LOCKED while the op is genuinely in flight
-  // ("queueing"). On 'retry' / 'expired-window' / 'stale-visual' or on inline
-  // error, the user must be able to tap ADD again. The row's expand toggle is
-  // locked only during 'queueing' so the row layout doesn't shift mid-flight.
+  // §4.3 lock matrix:
+  //   - queueing (no error): ADD + stepper LOCKED until ack / timeout.
+  //   - retry / expired-window / on inline error: ADD must be tappable.
+  //   - stale-visual (5+ min, spec line 329): dismiss-only; ADD LOCKED.
+  // The row's expand toggle locks only during queueing so the row layout
+  // doesn't shift mid-flight.
   const isQueueing = classification === 'queueing'
   const lockToggle = isQueueing
-  // §4.3 line 329: stale-visual allows ONLY dismiss — ADD is locked.
   const lockAdd = (isQueueing && !error) || classification === 'stale-visual'
   const addLabel =
     !isPending ? 'ADD'
