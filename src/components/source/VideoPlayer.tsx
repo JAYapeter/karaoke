@@ -43,10 +43,17 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
         setGraphReady(true)
         connRef.current.send({ type: 'source.ready', msgId: randomUUID() })
         if (bypassed) {
-          connRef.current.send({
-            type: 'player.error', epoch: 0, itemId: '',
-            message: 'Pitch shift unavailable — playing original key',
-          } as any)
+          // CLIENT-LOCAL toast: dispatching `player.error` to the server doesn't
+          // work here because epoch=0/itemId='' is rejected by the stale-epoch
+          // guard in dispatch.ts before the broadcast fires. The Toaster's
+          // `karaoke-msg` listener handles synthetic `toast` ServerMessages.
+          window.dispatchEvent(new CustomEvent('karaoke-msg', {
+            detail: {
+              type: 'toast',
+              level: 'warn',
+              message: 'Pitch shift unavailable — playing original key',
+            },
+          }))
         }
       })
       .catch((e) => {
