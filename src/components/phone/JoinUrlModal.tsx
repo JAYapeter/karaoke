@@ -92,18 +92,27 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
 
     // Capture-phase keydown so we win over child + document-level handlers.
     // Runs for BOTH the <dialog> and the manual-fallback paths so Space and
-    // ArrowLeft/ArrowRight don't reach KeyboardShortcuts on /source while the
-    // modal is open. Escape closes the modal (the native <dialog> would also
-    // fire its `cancel` event, but stopping propagation prevents any global
-    // Escape handler from also reacting). Tab is intercepted only by the
-    // fallback path for manual focus trap; <dialog> handles Tab natively.
+    // ArrowLeft/ArrowRight/ArrowUp/ArrowDown don't reach KeyboardShortcuts on
+    // /source while the modal is open (ArrowUp/Down adjust live pitch — a
+    // silent state change while the user is arrow-navigating the modal's
+    // controls). Escape closes the modal (the native <dialog> would also fire
+    // its `cancel` event, but stopping propagation prevents any global Escape
+    // handler from also reacting). Tab is intercepted only by the fallback
+    // path for manual focus trap; <dialog> handles Tab natively.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.stopPropagation()
         if (!usingDialog) stableClose()
         return
       }
-      if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      if (
+        e.key === ' ' ||
+        e.key === 'Spacebar' ||
+        e.key === 'ArrowLeft' ||
+        e.key === 'ArrowRight' ||
+        e.key === 'ArrowUp' ||
+        e.key === 'ArrowDown'
+      ) {
         // Don't preventDefault — let the focused button/textarea consume normally.
         e.stopPropagation()
         return
