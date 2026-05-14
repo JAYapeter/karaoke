@@ -150,7 +150,6 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
   const Body = (
     <div
       ref={containerRef}
-      className="join-url-modal__body"
       style={{
         padding: 'env(safe-area-inset-top, 12px) env(safe-area-inset-right, 12px) env(safe-area-inset-bottom, 12px) env(safe-area-inset-left, 12px)',
         maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto',
@@ -159,7 +158,7 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
       }}
     >
       <div className="uc" style={{ fontSize: 12, letterSpacing: '0.2em' }}>scan to join</div>
-      <div className="join-url-modal__qr" style={{ width: qrPx, height: qrPx, background: 'var(--paper-cream)' }}>
+      <div style={{ width: qrPx, height: qrPx, background: 'var(--paper-cream)' }}>
         {qrDataUrl && <img src={qrDataUrl} alt={`Join URL ${url}`} width={qrPx} height={qrPx} style={{ display: 'block' }} />}
       </div>
       <div className="uc" style={{ fontSize: 13, wordBreak: 'break-all', textAlign: 'center' }}>{url}</div>

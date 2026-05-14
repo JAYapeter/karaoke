@@ -28,8 +28,10 @@ const useQrDataUrl = (url: string, size: number) => {
 
 export const QrPanel = ({ variant = 'full', onOpenJoinModal }: QrPanelProps) => {
   const url = useJoinUrl()
-  const fullDataUrl = useQrDataUrl(url, 220)
-  const chipDataUrl = useQrDataUrl(url, 120)
+  // Gate the unused variant's hook so we only encode one QR at a time. The
+  // hook bails when url is empty, so passing '' skips the qrcode work.
+  const fullDataUrl = useQrDataUrl(variant === 'full' ? url : '', 220)
+  const chipDataUrl = useQrDataUrl(variant === 'chip' ? url : '', 120)
 
   if (variant === 'chip') {
     return (
