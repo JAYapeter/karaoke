@@ -138,8 +138,19 @@ app.prepare().then(() => {
     ws.on('close', () => {
       clients.delete(ctx)
       if (ctx.isSource) {
-        store.setSourceConnected(false)
-        store.setSourceReady(false)
+        // Round-7 #2: stale-close guard. If a *newer* source ws already
+        // claimed authority (e.g. host hit Cmd-R, the close for the OLD
+        // socket landed AFTER the new socket joined), don't clobber the
+        // freshly-set connection flags. Only clear if no other client
+        // currently holds isSource.
+        let stillHaveSource = false
+        for (const c of clients) {
+          if (c.isSource) { stillHaveSource = true; break }
+        }
+        if (!stillHaveSource) {
+          store.setSourceConnected(false)
+          store.setSourceReady(false)
+        }
       }
     })
   })
