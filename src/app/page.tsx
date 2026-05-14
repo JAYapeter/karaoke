@@ -298,8 +298,12 @@ const PhoneApp = () => {
                   setRef.delete(registered)
                 }
                 if (m.ok) {
-                  const liveLen = connRef.current.state?.queue.length
-                  const reportLen = typeof liveLen === 'number' ? liveLen : queueLen + 1
+                  // Take the max with the local snapshot+1: a stale state.queue
+                  // can read a smaller value than the queueLen snapshot
+                  // (broadcast hasn't landed yet), and the toast count should
+                  // only move forward.
+                  const liveLen = connRef.current.state?.queue.length ?? 0
+                  const reportLen = Math.max(liveLen, queueLen + 1)
                   showToast({ level: 'info', message: `▌ Added — ${reportLen} in queue`, ttlMs: 2000 })
                 } else {
                   showToast({ level: 'error', message: `▌ Add failed — ${m.error ?? 'unknown error'}` })

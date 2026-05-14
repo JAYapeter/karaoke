@@ -110,9 +110,11 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
           // Use the freshest queue length from conn.state — the server's
           // state.queue broadcast for this add typically lands before (or in
           // the same dispatch as) the state.ack, so the count is already
-          // ticked. Fall back to queueLen+1 if state isn't yet observed.
-          const liveLen = connRef.current.state?.queue.length
-          const reportLen = typeof liveLen === 'number' ? liveLen : queueLenRef.current + 1
+          // ticked. Take the max with the local snapshot+1 so a stale
+          // state.queue (broadcast hasn't landed yet) never reports a count
+          // that goes "backwards" — only ever forward.
+          const liveLen = connRef.current.state?.queue.length ?? 0
+          const reportLen = Math.max(liveLen, queueLenRef.current + 1)
           showToast({ level: 'info', message: `Added — ${reportLen} in queue`, ttlMs: 2000 })
         }
       } else {

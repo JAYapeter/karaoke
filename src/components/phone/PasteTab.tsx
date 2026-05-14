@@ -95,8 +95,11 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
         if (isActiveRef.current) {
           setMeta(null); setUrl(''); setAddError(null)
         } else {
-          const liveLen = connRef.current.state?.queue.length
-          const reportLen = typeof liveLen === 'number' ? liveLen : queueLenRef.current + 1
+          // Take the max with the local snapshot+1: a stale state.queue can
+          // read a smaller value than the queueLenRef snapshot (broadcast
+          // hasn't landed yet), and the toast count should only move forward.
+          const liveLen = connRef.current.state?.queue.length ?? 0
+          const reportLen = Math.max(liveLen, queueLenRef.current + 1)
           showToast({ level: 'info', message: `Added — ${reportLen} in queue`, ttlMs: 2000 })
         }
       } else if (m.error) {
