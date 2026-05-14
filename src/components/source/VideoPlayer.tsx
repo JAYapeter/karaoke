@@ -3,6 +3,7 @@ import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useRef, useState } from 'react'
 import { buildAudioGraph, buildAudioGraphNoPitch, type AudioGraph } from '@/lib/client/audio-graph'
 import { setAudioGraph } from '@/lib/client/audio-graph-ref'
+import { createSourceReadyGate, type SourceReadyGate } from '@/lib/client/source-ready-gate'
 import type { Connection } from '@/lib/client/ws'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
 import { NowPlayingStrip } from './NowPlayingStrip'
@@ -24,6 +25,10 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
 
   // Mount the audio graph exactly once. Strict-mode double-effect handled
   // via the `cancelled` flag: if we tear down before the async build resolves, destroy on arrival.
+  // The source.ready handshake is intentionally NOT sent from here — the
+  // [conn.ready, graphReady] effect below owns it so we re-send on every
+  // WebSocket reconnect (the audio graph survives, but the server clears
+  // sourceReady on the old socket's close).
   useEffect(() => {
     let cancelled = false
     if (!mountRef.current) return
@@ -41,7 +46,6 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
         graphRef.current = g
         setAudioGraph(g)
         setGraphReady(true)
-        connRef.current.send({ type: 'source.ready', msgId: randomUUID() })
         if (bypassed) {
           // CLIENT-LOCAL toast: dispatching `player.error` to the server doesn't
           // work here because epoch=0/itemId='' is rejected by the stale-epoch
@@ -67,6 +71,33 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
       setGraphReady(false)
     }
   }, [])
+
+  // Re-send `source.ready` on every WebSocket (re)connection.
+  //
+  // Why this lives in its own effect:
+  // - useConnection auto-reconnects after a drop (new TCP socket, fresh join cycle).
+  //   The server's close handler clears `sourceReady = false` on the OLD ws, but
+  //   the new ws's join only re-sets `sourceConnected = true` — never `sourceReady`.
+  //   The audio graph (held in a ref) survives the reconnect, so the mount-once
+  //   effect doesn't run again, and without this effect `sourceReady` would
+  //   stay `false` forever, stalling auto-advance and leaving all phones on
+  //   "▌ source offline — playback paused".
+  // - Gate (`createSourceReadyGate`) returns true exactly once per
+  //   (connection × graph-ready) pairing and re-arms whenever `conn.ready`
+  //   drops. Covers all orderings:
+  //     a) graph ready BEFORE ws opens → fires the moment ws opens
+  //     b) ws open BEFORE graph ready → fires the moment graph becomes ready
+  //     c) ws reconnects mid-session  → fires again on the new connection
+  // - Idempotent on the server: replaying `source.ready` on the same socket
+  //   just re-sets `sourceReady = true` and re-broadcasts state. See
+  //   dispatch.ts:93-103.
+  const gateRef = useRef<SourceReadyGate | null>(null)
+  if (gateRef.current === null) gateRef.current = createSourceReadyGate()
+  useEffect(() => {
+    if (gateRef.current!.shouldSend(conn.ready, graphReady)) {
+      connRef.current.send({ type: 'source.ready', msgId: randomUUID() })
+    }
+  }, [conn.ready, graphReady])
 
   // Sync src and pitch with server-driven player state
   useEffect(() => {
