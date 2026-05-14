@@ -1,5 +1,5 @@
 'use client'
-import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef, type ReactNode } from 'react'
 import type { ServerMessage } from '@/lib/types/protocol'
 import { useToaster } from '@/components/shared/Toaster'
 import {
@@ -64,16 +64,28 @@ export const PendingAddsProvider = ({ children }: { children: ReactNode }) => {
   // be tab-agnostic, otherwise unmounting a tab mid-flight orphans the entry.
   // We dispatch only — the reducer is a no-op for unknown msgIds, so this
   // listener is safe to run even when this provider's pendingAdds is empty.
+  //
+  // Round-3 #1: the `lastAddSentAt` clear must ONLY fire for acks of
+  // queue.add msgIds — not for join/search/meta.fetch/etc. We keep a ref to
+  // the live state so the handler (registered with [] deps) can check
+  // `state.has(msgId)` against the current pendingAdds map. Only msgIds we
+  // tracked via `add()` live in that map (by construction those are
+  // queue.add ops), so this is a precise discriminator.
+  const stateRef = useRef(state)
+  useEffect(() => { stateRef.current = state }, [state])
   useEffect(() => {
     const handler = (e: Event) => {
       const m = (e as CustomEvent<ServerMessage>).detail
       if (m.type === 'state.ack') {
+        const wasPendingAdd = stateRef.current.has(m.msgId)
         dispatch({ type: 'ack', msgId: m.msgId, ok: m.ok, error: m.error })
         // §4.3 recent-add warning hygiene: once the server has acknowledged
-        // success, the warning is misleading (a fast reload would still see
-        // it within 10 s otherwise). Clear the timestamp on success so the
-        // post-reload toast only fires when an add really is mid-flight.
-        if (m.ok) {
+        // a queue.add success, the warning is misleading (a fast reload would
+        // still see it within 10 s otherwise). Only clear when the acked
+        // msgId corresponds to a tracked add; otherwise unrelated acks (join,
+        // search, meta.fetch, player.pause, …) would wipe the timestamp and
+        // make the post-reload toast unreachable.
+        if (m.ok && wasPendingAdd) {
           try { localStorage.removeItem(LAST_ADD_SENT_AT_KEY) } catch {}
         }
       }
