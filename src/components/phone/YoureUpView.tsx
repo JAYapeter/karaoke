@@ -5,6 +5,7 @@ import type { Connection } from '@/lib/client/ws'
 import type { PlayerState } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
 import { clampPitch } from './KeyStepper'
+import { shouldReplayPendingPitch } from '@/lib/client/pending-pitch-replay'
 
 const NO_ACK_RETRY_MS = 6000
 
@@ -120,12 +121,17 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
     const nowConnected = sourceConnected && sourceReady
     if (!wasConnectedRef.current && nowConnected) {
       const p = pendingRef.current
-      if (p && p.itemId === player.item.id && p.epoch === player.epoch && p.value !== player.livePitch) {
+      if (p && shouldReplayPendingPitch(p, { itemId: player.item.id, epoch: player.epoch, livePitch: player.livePitch })) {
         // Replay with same msgId (or new msgId if rejected once) — server
         // dedup makes this safe.
         sendLivePitch(p.value, p.msgId ? { reuseMsgId: p.msgId } : undefined)
-      } else if (p && (p.itemId !== player.item.id || p.epoch !== player.epoch)) {
-        // Song changed under us — discard.
+      } else if (p) {
+        // Round-9 #1: drain pending whenever we DON'T replay. Two cases:
+        //   (a) song changed under us (itemId/epoch mismatch) — pending is stale
+        //   (b) value already matches server's livePitch — replay is a no-op,
+        //       but if we leave pendingRef set, the source-sync effect at L53
+        //       (gated by !p) will block all future server-driven livePitch
+        //       updates from rendering until the user taps again. Drop it.
         clearPendingTimer()
         pendingRef.current = null
       }
