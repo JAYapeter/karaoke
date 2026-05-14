@@ -203,6 +203,24 @@ const PhoneApp = () => {
   const connRef = useRef(conn)
   connRef.current = conn
 
+  // Tray-retry one-shot listeners: each `expired-window` retry from the tray
+  // registers a window-level karaoke-msg listener that resolves on ack. Without
+  // tracking, they accumulate (user navigates away before the ack arrives, or
+  // the ack never arrives at all). We track them so unmount drains the set,
+  // and each entry carries a 30 s timeout that auto-cleans + surfaces an error
+  // toast if no ack arrives.
+  const trayRetryEntriesRef = useRef<Set<{ listener: EventListener; timer: ReturnType<typeof setTimeout> }>>(new Set())
+  useEffect(() => {
+    const entries = trayRetryEntriesRef.current
+    return () => {
+      for (const e of entries) {
+        window.removeEventListener('karaoke-msg', e.listener)
+        clearTimeout(e.timer)
+      }
+      entries.clear()
+    }
+  }, [])
+
   // Mount-version: bumps whenever any conditionally-mounted occluder flips
   // visibility (offline banner — gated by showOfflineBanner — or pending
   // tray). Drives the occluder-height hook to re-observe.
@@ -266,10 +284,19 @@ const PhoneApp = () => {
               // §4.3: tray-originated retries have no per-tab UX listener
               // because the originating tab may be unmounted. Register a
               // one-shot listener here so success / failure surfaces a toast.
+              // Both the listener and a 30 s timeout fallback are tracked in
+              // trayRetryEntriesRef so unmount drains every outstanding one,
+              // and a never-ack scenario doesn't leak the listener forever.
+              const setRef = trayRetryEntriesRef.current
+              let registered: { listener: EventListener; timer: ReturnType<typeof setTimeout> } | null = null
               const onAck: EventListener = (e) => {
                 const m = (e as CustomEvent<ServerMessage>).detail
                 if (m.type !== 'state.ack' || m.msgId !== newMsgId) return
                 window.removeEventListener('karaoke-msg', onAck)
+                if (registered) {
+                  clearTimeout(registered.timer)
+                  setRef.delete(registered)
+                }
                 if (m.ok) {
                   const liveLen = connRef.current.state?.queue.length
                   const reportLen = typeof liveLen === 'number' ? liveLen : queueLen + 1
@@ -278,6 +305,13 @@ const PhoneApp = () => {
                   showToast({ level: 'error', message: `▌ Add failed — ${m.error ?? 'unknown error'}` })
                 }
               }
+              const timer = setTimeout(() => {
+                window.removeEventListener('karaoke-msg', onAck)
+                if (registered) setRef.delete(registered)
+                showToast({ level: 'error', message: '▌ Add failed — no response from server' })
+              }, 30_000)
+              registered = { listener: onAck, timer }
+              setRef.add(registered)
               window.addEventListener('karaoke-msg', onAck)
               conn.send({ type: 'queue.add', msgId: newMsgId, videoId: entry.videoId, prePitch: entry.prePitch })
               return
