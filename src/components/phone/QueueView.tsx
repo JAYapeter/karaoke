@@ -23,18 +23,26 @@ export const QueueView = ({ conn, sessionId, sourceConnected, sourceReady }: Pro
     })
   }
 
+  // When the player is idle, NowPlayingCard renders queue[0] as the ▌ NEXT UP
+  // preview, so the up-next list must start at index 1 to avoid duplicating it.
+  // In playing/paused state the now-playing card shows the live item (not
+  // queue[0]), so the queue list stays intact.
+  const idleWithQueue = state.player.status === 'idle' && state.queue.length > 0
+  const renderedQueue = idleWithQueue ? state.queue.slice(1) : state.queue
+  const upNextCount = idleWithQueue ? state.queue.length - 1 : state.queue.length
+
   return (
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <NowPlayingCard state={state} sourceConnected={sourceConnected} sourceReady={sourceReady} />
       <h3 className="uc" style={{ fontSize: 12, color: 'var(--paper-cream)', letterSpacing: '0.2em' }}>
-        ▌ up next · {state.queue.length}
+        ▌ up next · {upNextCount}
       </h3>
-      {state.queue.length === 0 && (
+      {renderedQueue.length === 0 && !idleWithQueue && (
         <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', color: 'var(--ink-muted)' }}>
           nothing queued yet — try search or paste
         </div>
       )}
-      {state.queue.map((it, i) => (
+      {renderedQueue.map((it, i) => (
         <div key={it.id} className="paper-card paper-grain" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
           <div style={{ minWidth: 0, flex: '1 1 auto' }}>
             <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
