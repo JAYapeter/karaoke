@@ -6,7 +6,7 @@ export const SourceOfflineState = () => (
     className="source-offline source-offline--overlay"
     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, var(--ink-deep), var(--ink-black))', color: 'var(--riso-pink)' }}
   >
-    <div className="uc offline-banner" style={{ fontSize: 16, letterSpacing: '0.2em' }}>
+    <div className="uc offline-banner offline-banner--overlay" style={{ letterSpacing: '0.2em' }}>
       ▌ source offline — reconnecting…
     </div>
   </div>

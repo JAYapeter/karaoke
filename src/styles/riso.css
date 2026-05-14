@@ -345,6 +345,14 @@ input, textarea, select { font-size: 16px; }
 }
 .youre-up__readout { touch-action: pan-y; }
 
+/* Desktop defaults for YoureUpView sizing — kept in CSS so the compact
+   landscape media query (max-width:720px, max-height:480px) below can win.
+   Components MUST NOT set inline font-size/min-width/min-height on these
+   classes. */
+.youre-up__title   { font-size: 32px; }
+.youre-up__readout { font-size: 32px; }
+.youre-up__btn     { min-width: 56px; min-height: 56px; font-size: 24px; }
+
 /* §5.4 status-critical labels — class-level floors so inline component
    fontSize is unnecessary. Desktop: 12px minimum; phones (≤720px): 13px.
    Components MUST NOT set inline `font-size` on these classes — let the
@@ -366,6 +374,13 @@ input, textarea, select { font-size: 16px; }
   .next-up-badge {
     font-size: 13px;
   }
+}
+/* Overlay variant of .offline-banner (used inside the video frame, where the
+   spec calls for a larger 16px treatment). Class-level rule so the component
+   no longer needs inline font-size — keeping floors out of JSX. */
+.offline-banner--overlay { font-size: 16px; }
+@media (max-width: 720px) {
+  .offline-banner--overlay { font-size: 16px; }
 }
 
 /* §3.5 phone-width source layout.

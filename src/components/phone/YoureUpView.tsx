@@ -174,7 +174,7 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
         <span>{offline ? '' : (player.status === 'paused' ? '▌ PAUSED' : `${fmtMmSs(player.positionSec)} / ${fmtMmSs(player.item.durationSec)}`)}</span>
       </div>
       <div className="youre-up__title-block" style={{ padding: '24px 16px 8px' }}>
-        <h1 className="youre-up__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 32, margin: 0, color: 'var(--paper-cream)' }}>
+        <h1 className="youre-up__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, margin: 0, color: 'var(--paper-cream)' }}>
           {player.item.title}
         </h1>
         <div className="uc" style={{ fontSize: 12, color: 'var(--paper-cream)', letterSpacing: '0.15em', marginTop: 4 }}>
@@ -183,7 +183,7 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
       </div>
       <div className="youre-up__controls" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginTop: 'auto', color: 'var(--paper-cream)' }}>
         <div className="uc" style={{ fontSize: 12, color: 'var(--paper-cream)', opacity: 0.8 }}>KEY</div>
-        <div className="youre-up__readout" aria-live="polite" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 32, color: 'var(--hanko-red)' }}>
+        <div className="youre-up__readout" aria-live="polite" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, color: 'var(--hanko-red)' }}>
           {pitch >= 0 ? `+${pitch}` : pitch}
         </div>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
@@ -193,9 +193,11 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
             aria-label="Lower pitch by one semitone"
             onClick={() => onPitchChange(pitch - 1)}
             style={{
-              minWidth: 56, minHeight: 56, padding: '8px 14px',
+              padding: '8px 14px',
               background: 'transparent', color: 'var(--paper-cream)',
-              border: '1px solid var(--paper-cream)', fontSize: 24,
+              border: '1px solid var(--paper-cream)',
+              // sizing (minWidth/minHeight/fontSize) lives on .youre-up__btn so
+              // the compact-landscape media query can override.
             }}
           >−</button>
           <button
@@ -204,9 +206,11 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
             aria-label="Raise pitch by one semitone"
             onClick={() => onPitchChange(pitch + 1)}
             style={{
-              minWidth: 56, minHeight: 56, padding: '8px 14px',
+              padding: '8px 14px',
               background: 'transparent', color: 'var(--paper-cream)',
-              border: '1px solid var(--paper-cream)', fontSize: 24,
+              border: '1px solid var(--paper-cream)',
+              // sizing (minWidth/minHeight/fontSize) lives on .youre-up__btn so
+              // the compact-landscape media query can override.
             }}
           >+</button>
         </div>
