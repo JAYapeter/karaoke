@@ -48,7 +48,9 @@ export const QueueView = ({ conn, sessionId, sourceConnected, sourceReady }: Pro
             <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
               {String(i + 2).padStart(2, '0')} · {it.queuedBy.sessionId === sessionId ? 'YOU' : it.queuedBy.name.toUpperCase()}
             </div>
-            <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {/* font-size owned by .queue-now-playing__title in riso.css —
+                desktop 18px, compact-landscape 16px. No inline `fontSize`. */}
+            <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {it.title}
             </div>
             {it.prePitch !== 0 && (
@@ -120,7 +122,10 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
       {offline ? (
         <div className="uc" style={{ fontSize: 13, color: 'var(--riso-pink)' }}>▌ OFFLINE</div>
       ) : badge}
-      <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 18 }}>
+      {/* font-size owned by .queue-now-playing__title in riso.css —
+          desktop 18px, compact-landscape 16px. Setting inline `fontSize`
+          here would defeat the compact-landscape media query. */}
+      <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900 }}>
         {p.item.title}
       </div>
       <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>

@@ -25,19 +25,22 @@ export const NowPlayingStrip = ({ conn, player }: { conn: Connection; player: Ex
   return (
     <div
       className="now-playing-strip paper-card paper-grain"
-      // padding is owned by the .now-playing-strip class (riso.css):
-      // desktop 8px 12px, phone 8px 10px per §5.6. Adding inline `padding`
-      // shorthand would clobber the mobile override.
-      style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        display: 'flex', alignItems: 'center', gap: 12,
-      }}
+      // padding / display / align-items / gap are owned by the
+      // .now-playing-strip class (riso.css). Desktop default is
+      // flex+center+gap 12; the @media (max-width: 720px) block flips it
+      // to column with gap 6 per §5.6, and `padding` follows the same
+      // pattern (desktop 8px 12px, phone 8px 10px). Adding ANY of those
+      // properties inline would clobber the mobile/narrow-phone overrides.
+      style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
     >
       <div className="now-playing-strip__text" style={{ flex: '1 1 auto', minWidth: 0 }}>
         <MarqueeText text={player.item.title} className="now-playing-strip__title" />
         <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)', letterSpacing: '0.15em' }}>{subline}</div>
       </div>
-      <div className="now-playing-strip__controls" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {/* display / align-items / gap owned by .now-playing-strip__controls
+          in riso.css — desktop + phone keep flex+center+gap 8; narrow-phone
+          (≤390px) flips to column+stretch. No inline overrides here. */}
+      <div className="now-playing-strip__controls">
         <div className="now-playing-strip__pitch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <button type="button" className="hit-target uc" aria-label="Lower pitch by one semitone" onClick={() => setLive(player.livePitch - 1)} style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}>−</button>
           <span className="hanko" aria-live="polite" style={{ minWidth: '2.4em', textAlign: 'center' }}>{fmtKey(player.livePitch)}</span>

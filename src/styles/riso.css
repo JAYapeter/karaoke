@@ -390,11 +390,20 @@ input, textarea, select { font-size: 16px; }
 }
 
 /* §3.5 phone-width source layout.
-   Desktop default for .now-playing-strip lives here so inline `padding`
-   on the component can be dropped — otherwise inline `padding: 8 12`
-   would override the spec'd phone `padding: 8 10` below. */
+   Desktop defaults for .now-playing-strip + __controls live here so the
+   component can drop inline `display`/`alignItems`/`gap`/`padding` —
+   otherwise inline shorthand would clobber the phone overrides below
+   (phone gap: 6px; narrow-phone __controls align-items: stretch). */
 .now-playing-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 8px 12px;
+}
+.now-playing-strip__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 @media (max-width: 720px) {
   .now-playing-strip {
@@ -450,6 +459,11 @@ input, textarea, select { font-size: 16px; }
     }
   }
 }
+
+/* Desktop default for QueueView now-playing/next-up title sizing. Kept in
+   CSS so the compact-landscape media query below can win — components
+   MUST NOT set inline `font-size` on .queue-now-playing__title. */
+.queue-now-playing__title { font-size: 18px; }
 
 /* §5.4 compact landscape (height ≤ 480px on phone widths). */
 @media (max-width: 720px) and (max-height: 480px) {
