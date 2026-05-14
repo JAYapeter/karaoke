@@ -63,7 +63,18 @@ const PhoneApp = () => {
           onAddedSwitchToQueue={onAddedSwitchToQueue}
         />
       )}
-      {tab === 'paste' && <PasteTab conn={conn} />}
+      {tab === 'paste' && (
+        <PasteTab
+          conn={conn}
+          currentEpoch={
+            conn.state?.player && conn.state.player.status !== 'idle'
+              ? conn.state.player.epoch
+              : 0
+          }
+          isActive={tab === 'paste'}
+          queueLen={conn.state?.queue.length ?? 0}
+        />
+      )}
       <LivePitchSheet conn={conn} sessionId={sessionId} />
     </main>
   )
