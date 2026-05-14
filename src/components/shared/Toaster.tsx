@@ -86,6 +86,17 @@ const ToastItem = ({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
 export const Toaster = ({ children }: { children?: ReactNode }) => {
   const [toasts, setToasts] = useState<Toast[]>([])
   const nextIdRef = useRef(1)
+  // Track every outstanding TTL timer so unmount can drain them. Without this,
+  // a fast-mount/unmount cycle (or many concurrent toasts when the provider
+  // unmounts) leaked setToasts-into-an-unmounted-component callbacks.
+  const pendingTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  useEffect(() => {
+    const timers = pendingTimersRef.current
+    return () => {
+      for (const t of timers) clearTimeout(t)
+      timers.clear()
+    }
+  }, [])
 
   const showToast = useCallback<Ctx['showToast']>((t) => {
     const id = nextIdRef.current++
@@ -94,7 +105,11 @@ export const Toaster = ({ children }: { children?: ReactNode }) => {
     // assigning `undefined` to an optional-but-not-nullable property.
     const toast: Toast = { id, level: t.level, message: t.message, ...(t.undo ? { undo: t.undo } : {}) }
     setToasts((cur) => [...cur, toast])
-    setTimeout(() => setToasts((cur) => cur.filter((x) => x.id !== id)), ttl)
+    const timer = setTimeout(() => {
+      pendingTimersRef.current.delete(timer)
+      setToasts((cur) => cur.filter((x) => x.id !== id))
+    }, ttl)
+    pendingTimersRef.current.add(timer)
   }, [])
 
   useEffect(() => {
