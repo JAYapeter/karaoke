@@ -226,6 +226,19 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
         return // 5+ min stale — only dismiss is allowed, no retry.
       }
       if (cls === 'expired-window') {
+        // §4.3 expired-window: the user accepted dup risk and we're minting a
+        // fresh msgId. The OLD entry must be evicted FIRST — otherwise the
+        // tray shows two rows, pendingForRow() can still match the stale
+        // mapping (iteration order is insertion order), and the old per-msgId
+        // listener keeps firing on a now-orphaned ack. Tear down old listener
+        // + originator mapping + pendingAdds entry BEFORE registering the new.
+        const oldListener = ackListenersRef.current.get(existing.msgId)
+        if (oldListener) {
+          window.removeEventListener('karaoke-msg', oldListener)
+          ackListenersRef.current.delete(existing.msgId)
+        }
+        originatorRef.current.delete(existing.msgId)
+        dismissPending(existing.msgId)
         msgId = randomUUID()
         addPending(msgId, r.videoId, clampPitch(pitch), currentEpoch, r.title)
         originatorRef.current.set(msgId, rk)

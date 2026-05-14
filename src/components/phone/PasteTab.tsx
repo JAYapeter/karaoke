@@ -166,6 +166,18 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
       !!addError
     const msgId = needNewMsgId ? randomUUID() : activeAddMsgId!
     if (needNewMsgId) {
+      // §4.3 expired-window / error-cached: minting a fresh msgId — evict the
+      // OLD entry from pendingAdds + tear down the old per-msgId listener
+      // BEFORE registering the new one. Without this, the tray would briefly
+      // render two rows for the same paste, and the stale listener would keep
+      // firing on a now-orphaned ack.
+      if (activeAddMsgId) {
+        dismissPending(activeAddMsgId)
+        if (ackListenerRef.current) {
+          window.removeEventListener('karaoke-msg', ackListenerRef.current)
+          ackListenerRef.current = null
+        }
+      }
       addPending(msgId, meta.videoId, clampPitch(pitch), currentEpoch, meta.title)
       setActiveAddMsgId(msgId)
       addAckListener(msgId)

@@ -194,7 +194,7 @@ const PhoneApp = () => {
     player && player.status !== 'idle' && player.item.queuedBy.sessionId === sessionId
   const showTakeoverInQueueTab = isOwnTurn && tab === 'queue'
 
-  const { pendingAdds, add: addPending } = usePendingAdds()
+  const { pendingAdds, add: addPending, dismiss: dismissPending } = usePendingAdds()
   const { showToast } = useToaster()
   const currentEpoch = player && 'epoch' in player ? player.epoch : 0
 
@@ -256,6 +256,11 @@ const PhoneApp = () => {
             // (expired-window), the tray's "start new add anyway" affordance
             // mints a fresh msgId — the user has accepted dup risk.
             if (cls === 'expired-window') {
+              // §4.3 expired-window: minting a fresh msgId — evict the OLD
+              // pendingAdds entry FIRST. Otherwise the tray renders two rows
+              // for the same retry, and any tab-level pendingForRow lookups
+              // can still match the stale msgId (insertion-order iteration).
+              dismissPending(msgId)
               const newMsgId = randomUUID()
               addPending(newMsgId, entry.videoId, entry.prePitch, currentEpoch, entry.title)
               // §4.3: tray-originated retries have no per-tab UX listener
