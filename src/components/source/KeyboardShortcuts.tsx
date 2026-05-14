@@ -3,9 +3,19 @@ import { randomUUID } from '@/lib/client/uuid'
 import { useEffect } from 'react'
 import type { Connection } from '@/lib/client/ws'
 
+// Prevents silently changing player state while the host is interacting with form controls (e.g., the volume slider).
+export const shouldHandleKey = (target: EventTarget | null): boolean => {
+  if (target instanceof HTMLInputElement) return false
+  if (target instanceof HTMLTextAreaElement) return false
+  if (target instanceof HTMLSelectElement) return false
+  if (target instanceof HTMLElement && target.isContentEditable) return false
+  return true
+}
+
 export const KeyboardShortcuts = ({ conn }: { conn: Connection }) => {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (!shouldHandleKey(e.target)) return
       const p = conn.state?.player
       if (!p) return
       if (e.code === 'Space') { e.preventDefault(); conn.send({ type: p.status === 'paused' ? 'player.play' : 'player.pause', msgId: randomUUID() }) }
