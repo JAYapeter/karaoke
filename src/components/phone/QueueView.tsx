@@ -99,7 +99,9 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
     return (
       <div className="paper-card paper-grain paper-card--accent">
         <div className="next-up-badge uc" style={{ fontWeight: 700, color: 'var(--ink-black)' }}>▌ NEXT UP</div>
-        <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 18 }}>{next.title}</div>
+        {/* font-size owned by .queue-now-playing__title in riso.css —
+            desktop 18px, compact-landscape 16px. No inline `fontSize`. */}
+        <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900 }}>{next.title}</div>
         <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
           {next.queuedBy.name.toUpperCase()} · KEY {next.prePitch >= 0 ? '+' : ''}{next.prePitch}
         </div>
