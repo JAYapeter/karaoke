@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   pendingAddsReducer,
   initialPendingAdds,
-  type PendingAddsState,
   type PendingAddsAction,
   classifyPendingState,
   STALE_VISUAL_MS,
