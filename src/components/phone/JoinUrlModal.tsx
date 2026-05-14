@@ -65,27 +65,23 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
   useScrollLock(open)
   useEffect(() => {
     if (!open) return
-    if (supportsDialog() && dialogRef.current) {
+    const usingDialog = supportsDialog() && !!dialogRef.current
+    const prev = document.activeElement as HTMLElement | null
+    let cancelHandler: ((e: Event) => void) | null = null
+    if (usingDialog && dialogRef.current) {
       const d = dialogRef.current
-      const prev = document.activeElement as HTMLElement | null
       // Strict-mode double-mount or rapid re-render can re-enter this effect
       // while the dialog is already open. Guard so showModal() doesn't throw
       // InvalidStateError.
       if (!d.open) d.showModal()
-      closeBtnRef.current?.focus()
-      const onCancel = (e: Event) => { e.preventDefault(); stableClose() }
-      d.addEventListener('cancel', onCancel)
-      return () => {
-        d.removeEventListener('cancel', onCancel)
-        if (d.open) d.close()
-        prev?.focus()
-      }
+      cancelHandler = (e: Event) => { e.preventDefault(); stableClose() }
+      d.addEventListener('cancel', cancelHandler)
     }
-    // Fallback path. Must implement focus trap manually per §5.6.
-    const root = containerRef.current
-    const prev = document.activeElement as HTMLElement | null
     closeBtnRef.current?.focus()
+
+    // Focus-trap helpers (only used by the manual-fallback path).
     const focusables = (): HTMLElement[] => {
+      const root = containerRef.current
       if (!root) return []
       return Array.from(
         root.querySelectorAll<HTMLElement>(
@@ -93,15 +89,31 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
         ),
       ).filter((el) => !el.hidden && el.offsetParent !== null)
     }
+
+    // Capture-phase keydown so we win over child + document-level handlers.
+    // Runs for BOTH the <dialog> and the manual-fallback paths so Space and
+    // ArrowLeft/ArrowRight don't reach KeyboardShortcuts on /source while the
+    // modal is open. Escape closes the modal (the native <dialog> would also
+    // fire its `cancel` event, but stopping propagation prevents any global
+    // Escape handler from also reacting). Tab is intercepted only by the
+    // fallback path for manual focus trap; <dialog> handles Tab natively.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { stableClose(); return }
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        if (!usingDialog) stableClose()
+        return
+      }
+      if (e.key === ' ' || e.key === 'Spacebar' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        // Don't preventDefault — let the focused button/textarea consume normally.
+        e.stopPropagation()
+        return
+      }
       if (e.key !== 'Tab') return
+      if (usingDialog) return // <dialog> traps Tab natively
       const f = focusables()
       if (f.length === 0) { e.preventDefault(); return }
       const active = document.activeElement as HTMLElement | null
       const idx = active ? f.indexOf(active) : -1
-      // Always handle Tab inside the modal — otherwise focus escapes to elements
-      // outside the dialog when the user tabs from the middle of the list.
       e.preventDefault()
       if (idx === -1) { f[0]!.focus(); return }
       if (e.shiftKey) {
@@ -110,9 +122,17 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
         f[idx === f.length - 1 ? 0 : idx + 1]!.focus()
       }
     }
-    // Capture-phase keydown so we win over child handlers.
     window.addEventListener('keydown', onKey, true)
-    return () => { window.removeEventListener('keydown', onKey, true); prev?.focus() }
+
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      if (usingDialog && dialogRef.current) {
+        const d = dialogRef.current
+        if (cancelHandler) d.removeEventListener('cancel', cancelHandler)
+        if (d.open) d.close()
+      }
+      prev?.focus()
+    }
   }, [open, stableClose])
 
   const onBackdropTap = (e: React.MouseEvent<HTMLDialogElement>) => {
