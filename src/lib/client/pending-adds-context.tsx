@@ -69,6 +69,13 @@ export const PendingAddsProvider = ({ children }: { children: ReactNode }) => {
       const m = (e as CustomEvent<ServerMessage>).detail
       if (m.type === 'state.ack') {
         dispatch({ type: 'ack', msgId: m.msgId, ok: m.ok, error: m.error })
+        // §4.3 recent-add warning hygiene: once the server has acknowledged
+        // success, the warning is misleading (a fast reload would still see
+        // it within 10 s otherwise). Clear the timestamp on success so the
+        // post-reload toast only fires when an add really is mid-flight.
+        if (m.ok) {
+          try { localStorage.removeItem(LAST_ADD_SENT_AT_KEY) } catch {}
+        }
       }
     }
     window.addEventListener('karaoke-msg', handler)
