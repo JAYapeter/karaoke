@@ -8,8 +8,15 @@
   --hanko-red:    #c1272d;
   --ink-muted:    #6a4818;
 
-  --display-font: 'Crimson Pro', Georgia, serif;
-  --mono-font: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  /* --display-font and --mono-font are intentionally NOT declared here. They
+     are provided by next/font/google in src/app/layout.tsx via the .variable
+     classes applied to <html>, which include metric-adjusted local fallbacks
+     (Crimson Pro Fallback / JetBrains Mono Fallback) with matching
+     ascent-override / descent-override / size-adjust to prevent CLS during
+     font swap. Declaring them at :root in this file would beat the
+     class-defined variables (both selectors have specificity 0,0,1,0, and
+     riso.css loads after the next/font stylesheet), defeating the CLS
+     optimization. Leave them undeclared so next/font's variables win. */
 
   /* Phone-root sticky-header height. The <Tabs> component overwrites this
      on mount via ResizeObserver. Default includes safe-area-inset-top so
