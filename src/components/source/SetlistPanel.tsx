@@ -1,4 +1,5 @@
 'use client'
+import { useEffect, useRef } from 'react'
 import { randomUUID } from '@/lib/client/uuid'
 import { getSessionId } from '@/lib/client/ws'
 import type { Connection } from '@/lib/client/ws'
@@ -19,6 +20,15 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
   const { showToast } = useToaster()
   const visible = queue.slice(0, VISIBLE_CAP)
   const more = Math.max(0, queue.length - VISIBLE_CAP)
+
+  // Each remove-undo registers a `karaoke-msg` listener + 4 s setTimeout. If
+  // the component unmounts before either fires, both leak. Track every live
+  // cleanup function so unmount can tear them down.
+  const undoCleanupsRef = useRef<Set<() => void>>(new Set())
+  useEffect(() => () => {
+    for (const fn of undoCleanupsRef.current) fn()
+    undoCleanupsRef.current.clear()
+  }, [])
 
   const shuffle = () => conn.send({ type: 'queue.shuffle', msgId: randomUUID() })
 
@@ -49,7 +59,9 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
         const cleanup = () => {
           window.removeEventListener('karaoke-msg', onMsg)
           if (timeoutId) { clearTimeout(timeoutId); timeoutId = null }
+          undoCleanupsRef.current.delete(cleanup)
         }
+        undoCleanupsRef.current.add(cleanup)
         const onMsg = (e: Event) => {
           const m = (e as CustomEvent).detail as ServerMessage
           // ok=false ack short-circuits — the add was rejected, nothing to move.

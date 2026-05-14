@@ -36,12 +36,16 @@ export const useConnection = (opts: {
   const [ready, setReady] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
   const ackResolversRef = useRef<Map<string, (v: { ok: boolean; error?: string }) => void>>(new Map())
+  // Track outstanding per-ack timers so they can be cleared on unmount AND
+  // cleared from the map when each ack resolves naturally.
+  const ackTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const onMessage = opts.onMessage
   const sessionId = useMemo(() => getSessionId(), [])
 
   useEffect(() => {
     let alive = true
     let attempt = 0
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
     const connect = () => {
       const ws = new WebSocket(`ws://${location.host}/ws?sessionId=${sessionId}`)
@@ -64,7 +68,12 @@ export const useConnection = (opts: {
         }
         else if (msg.type === 'state.ack') {
           const r = ackResolversRef.current.get(msg.msgId)
-          if (r) { r({ ok: msg.ok, ...(msg.error ? { error: msg.error } : {}) }); ackResolversRef.current.delete(msg.msgId) }
+          if (r) {
+            r({ ok: msg.ok, ...(msg.error ? { error: msg.error } : {}) })
+            ackResolversRef.current.delete(msg.msgId)
+            const t = ackTimersRef.current.get(msg.msgId)
+            if (t) { clearTimeout(t); ackTimersRef.current.delete(msg.msgId) }
+          }
         }
         onMessage?.(msg)
         if (typeof window !== 'undefined') {
@@ -76,13 +85,21 @@ export const useConnection = (opts: {
         if (!alive) return
         const delay = Math.min(2000 + attempt * 500, 8000)
         attempt++
-        setTimeout(connect, delay)
+        reconnectTimer = setTimeout(connect, delay)
       })
     }
     connect()
 
     return () => {
       alive = false
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
+      // Clear every outstanding ack timeout. Snapshot first so the iteration
+      // isn't disturbed by concurrent resolves (though unmount usually races
+      // alone — defensive nonetheless).
+      const timers = [...ackTimersRef.current.values()]
+      ackTimersRef.current.clear()
+      ackResolversRef.current.clear()
+      for (const t of timers) clearTimeout(t)
       wsRef.current?.close()
     }
   }, [opts.name, sessionId, onMessage])
@@ -94,12 +111,14 @@ export const useConnection = (opts: {
   const ack = useCallback((msgId: string) =>
     new Promise<{ ok: boolean; error?: string }>((resolve) => {
       ackResolversRef.current.set(msgId, resolve)
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        ackTimersRef.current.delete(msgId)
         if (ackResolversRef.current.has(msgId)) {
           ackResolversRef.current.delete(msgId)
           resolve({ ok: false, error: 'timeout' })
         }
       }, 6000)
+      ackTimersRef.current.set(msgId, timer)
     }), [])
 
   return { state, send, ready, ack }
