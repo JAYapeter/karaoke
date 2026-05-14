@@ -4,7 +4,7 @@ import { NameEntry } from '@/components/phone/NameEntry'
 import { QueueView } from '@/components/phone/QueueView'
 import { SearchTab } from '@/components/phone/SearchTab'
 import { PasteTab } from '@/components/phone/PasteTab'
-import { LivePitchSheet } from '@/components/phone/LivePitchSheet'
+import { YoureUpView } from '@/components/phone/YoureUpView'
 import { Toaster } from '@/components/shared/Toaster'
 import { PendingAddsProvider } from '@/lib/client/pending-adds-context'
 import { getSessionId, getStoredName, useConnection } from '@/lib/client/ws'
@@ -28,6 +28,10 @@ const PhoneApp = () => {
   useEffect(() => { setName(getStoredName()) }, [])
   const conn = useConnection({ name })
   const onAddedSwitchToQueue = () => setTab('queue')
+  const player = conn.state?.player
+  const isOwnTurn =
+    player && player.status !== 'idle' && player.item.queuedBy.sessionId === sessionId
+  const showTakeover = !!isOwnTurn
   if (!name) return <NameEntry onSubmit={setName} />
   return (
     <main style={{ paddingBottom: 140 }}>
@@ -75,7 +79,14 @@ const PhoneApp = () => {
           queueLen={conn.state?.queue.length ?? 0}
         />
       )}
-      <LivePitchSheet conn={conn} sessionId={sessionId} />
+      {showTakeover && (
+        <YoureUpView
+          conn={conn}
+          player={player!}
+          sourceConnected={conn.state?.sourceConnected ?? false}
+          sourceReady={conn.state?.sourceReady ?? false}
+        />
+      )}
     </main>
   )
 }
