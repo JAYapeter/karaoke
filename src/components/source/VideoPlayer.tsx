@@ -5,6 +5,7 @@ import { buildAudioGraph, buildAudioGraphNoPitch, type AudioGraph } from '@/lib/
 import { setAudioGraph } from '@/lib/client/audio-graph-ref'
 import type { Connection } from '@/lib/client/ws'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
+import { NowPlayingStrip } from './NowPlayingStrip'
 
 export const VideoPlayer = ({ conn }: { conn: Connection }) => {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -115,5 +116,34 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
     return () => g.video.removeEventListener('ended', onEnded)
   }, [graphReady])
 
-  return <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+  const isPlaying = player && player.status !== 'idle'
+
+  return (
+    <div
+      className="source-video-frame"
+      style={{
+        position: 'relative', aspectRatio: '16 / 9', width: '100%', maxHeight: '100%',
+        background: 'var(--ink-deep)', border: '1.5px solid var(--cigarette)', overflow: 'hidden',
+      }}
+    >
+      <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+      {isPlaying && (
+        <>
+          <div
+            className="live-badge uc"
+            data-status={player.status}
+            style={{
+              position: 'absolute', top: 8, left: 8, padding: '2px 6px',
+              background: 'rgba(10, 8, 8, 0.7)', color: 'var(--riso-pink)',
+              letterSpacing: '0.16em', borderRadius: 2, pointerEvents: 'none',
+              // font-size enforced by .live-badge cascade (12 desktop, 13 phones).
+            }}
+          >
+            ▌ LIVE 出演中
+          </div>
+          <NowPlayingStrip conn={conn} player={player} />
+        </>
+      )}
+    </div>
+  )
 }
