@@ -86,7 +86,11 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
       if (m.type !== 'state.ack' || m.msgId !== msgId) return
       window.removeEventListener('karaoke-msg', onMsg)
       if (ackListenerRef.current === onMsg) ackListenerRef.current = null
-      setActiveAddMsgId((cur) => (cur === msgId ? null : cur))
+      // Only clear activeAddMsgId on success — on failure we keep it so the
+      // inline error & retry affordance can find their entry (pendingAdds is
+      // also cleared by the provider on ack.ok=false, but the msgId is still
+      // useful as a stable retry handle).
+      if (m.ok) setActiveAddMsgId((cur) => (cur === msgId ? null : cur))
       if (m.ok) {
         if (isActiveRef.current) {
           setMeta(null); setUrl(''); setAddError(null)
@@ -152,11 +156,14 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
     // §4.3 line 329: stale-visual is dismiss-only. Tap is a no-op.
     if (classification === 'stale-visual') return
     // §4.3 bounded-retry-window: on expired-window the user explicitly
-    // accepts dup risk; mint a new msgId. On retry/error, reuse the same msgId
-    // so server dedup short-circuits if the server already saw it.
+    // accepts dup risk; mint a new msgId. On retry (no error yet), reuse the
+    // same msgId so server dedup short-circuits if the server already saw it.
+    // On `addError` set, the server has CACHED a failed ack for the old msgId,
+    // so reusing it would return the same error — mint a fresh msgId.
     const needNewMsgId =
       !activeAddMsgId ||
-      classification === 'expired-window'
+      classification === 'expired-window' ||
+      !!addError
     const msgId = needNewMsgId ? randomUUID() : activeAddMsgId!
     if (needNewMsgId) {
       addPending(msgId, meta.videoId, clampPitch(pitch), currentEpoch, meta.title)
@@ -182,9 +189,13 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
   // §4.3 line 329: stale-visual allows ONLY dismiss — ADD is locked.
   const lockAdd = (classification === 'queueing' && !addError) || classification === 'stale-visual'
 
+  // After ack.ok=false, the provider clears pendingAdds before this re-renders,
+  // so `activePending` is null even though `activeAddMsgId` and `addError` are
+  // still set. The error branch leads with "tap to retry" so the retry path is
+  // still discoverable.
   const addLabel =
-    !activePending ? 'ADD'
-    : addError ? 'tap to retry'
+    addError ? 'tap to retry'
+    : !activePending ? 'ADD'
     : classification === 'retry' ? 'tap to retry'
     : classification === 'expired-window' ? 'start new add anyway'
     : classification === 'stale-visual' ? 'expired'
@@ -242,7 +253,7 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
               >
                 {addLabel}
               </button>
-              {activePending && (
+              {(activePending || addError) && (
                 <button
                   type="button"
                   onClick={cancelPending}

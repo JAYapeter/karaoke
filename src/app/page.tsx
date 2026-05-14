@@ -14,8 +14,9 @@ import { classifyPendingState } from '@/lib/client/pending-adds'
 import { useTopOccluderHeight } from '@/lib/client/use-top-occluder-height'
 import { randomUUID } from '@/lib/client/uuid'
 import { getSessionId, getStoredName, useConnection } from '@/lib/client/ws'
-import type { ClientMessage } from '@/lib/types/protocol'
+import type { ClientMessage, ServerMessage } from '@/lib/types/protocol'
 import type { Connection } from '@/lib/client/ws'
+import { useToaster } from '@/components/shared/Toaster'
 
 const MUTATING_PREFIXES = ['queue.', 'player.set']
 const MUTATING_EXACT = new Set(['player.skip', 'player.prev', 'player.pause', 'player.play'])
@@ -194,7 +195,13 @@ const PhoneApp = () => {
   const showTakeoverInQueueTab = isOwnTurn && tab === 'queue'
 
   const { pendingAdds, add: addPending } = usePendingAdds()
+  const { showToast } = useToaster()
   const currentEpoch = player && 'epoch' in player ? player.epoch : 0
+
+  // Keep the latest conn in a ref so the one-shot tray-retry ack listener can
+  // read freshest queue length without closing over a stale conn snapshot.
+  const connRef = useRef(conn)
+  connRef.current = conn
 
   // Mount-version: bumps whenever any conditionally-mounted occluder flips
   // visibility (offline banner — gated by showOfflineBanner — or pending
@@ -251,6 +258,22 @@ const PhoneApp = () => {
             if (cls === 'expired-window') {
               const newMsgId = randomUUID()
               addPending(newMsgId, entry.videoId, entry.prePitch, currentEpoch, entry.title)
+              // §4.3: tray-originated retries have no per-tab UX listener
+              // because the originating tab may be unmounted. Register a
+              // one-shot listener here so success / failure surfaces a toast.
+              const onAck: EventListener = (e) => {
+                const m = (e as CustomEvent<ServerMessage>).detail
+                if (m.type !== 'state.ack' || m.msgId !== newMsgId) return
+                window.removeEventListener('karaoke-msg', onAck)
+                if (m.ok) {
+                  const liveLen = connRef.current.state?.queue.length
+                  const reportLen = typeof liveLen === 'number' ? liveLen : queueLen + 1
+                  showToast({ level: 'info', message: `▌ Added — ${reportLen} in queue`, ttlMs: 2000 })
+                } else {
+                  showToast({ level: 'error', message: `▌ Add failed — ${m.error ?? 'unknown error'}` })
+                }
+              }
+              window.addEventListener('karaoke-msg', onAck)
               conn.send({ type: 'queue.add', msgId: newMsgId, videoId: entry.videoId, prePitch: entry.prePitch })
               return
             }

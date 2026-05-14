@@ -95,7 +95,11 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
       if (m.type !== 'state.ack' || m.msgId !== msgId) return
       window.removeEventListener('karaoke-msg', onMsg)
       ackListenersRef.current.delete(msgId)
-      originatorRef.current.delete(msgId)
+      // Only drop the originator mapping on success — on failure we keep it
+      // so the row can still look up its error after the provider clears the
+      // pendingAdds entry. The mapping is cleared later by retry, dismiss, or
+      // a successful re-add.
+      if (m.ok) originatorRef.current.delete(msgId)
       if (m.ok) {
         if (isActiveRef.current && expandedKeyRef.current === rk) {
           setResults([])
@@ -175,8 +179,40 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
     return null
   }
 
+  // Find the most recent msgId this row originated, regardless of whether the
+  // pendingAdds entry still exists. Used to surface inline errors AFTER the
+  // provider clears the entry on ack.ok=false (which happens before the row
+  // re-renders, so a pending-only lookup would lose the error).
+  const lastMsgIdForRow = (rk: string): string | null => {
+    let last: string | null = null
+    for (const [msgId, originKey] of originatorRef.current.entries()) {
+      if (originKey === rk) last = msgId
+    }
+    return last
+  }
+
   const doAdd = (r: SearchResult, rk: string) => {
+    // Sweep any stale originator entries for this row (kept past ack.ok=false
+    // so the inline error could render) — once the user taps retry, those
+    // post-failure mappings are no longer relevant.
     const existing = pendingForRow(rk)
+    if (!existing) {
+      // Drop any stale originator + error entries for this row (kept past
+      // ack.ok=false so the inline error could render). Once the user taps
+      // retry, those post-failure mappings are no longer relevant.
+      const staleIds: string[] = []
+      for (const [msgId, originKey] of originatorRef.current.entries()) {
+        if (originKey === rk) staleIds.push(msgId)
+      }
+      for (const id of staleIds) originatorRef.current.delete(id)
+      if (staleIds.length > 0) {
+        setErrorByMsg((prev) => {
+          const next = { ...prev }
+          for (const id of staleIds) delete next[id]
+          return next
+        })
+      }
+    }
     // §4.3 bounded-retry-window:
     //   - queueing/retry: reuse existing msgId (server dedup short-circuits).
     //   - expired-window: mint a NEW msgId — user accepted dup risk via the
@@ -271,15 +307,22 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
           const isExpanded = expandedKey === rk
           const bodyId = `search-row-${rk}-body`
           const pending = pendingForRow(rk)
-          const rowError = pending ? errorByMsg[pending.msgId] : undefined
+          // Look up error via the lastMsgId originator — survives the provider
+          // clearing the pendingAdds entry on ack.ok=false (the entry is gone
+          // by the time React re-renders, but the error must still surface).
+          const lastMsgId = lastMsgIdForRow(rk)
+          const rowError = lastMsgId ? errorByMsg[lastMsgId] : undefined
           const cls = pending
             ? classifyPendingState(pending, { now, currentEpoch, ackedTimeoutMs: ADD_ACK_TIMEOUT_MS })
             : null
           // exactOptionalPropertyTypes: only spread optional props when
           // defined — passing `undefined` violates the strict optional rule.
+          // onCancelPending also wired when there's a post-failure error but
+          // no pending entry, so the user can dismiss the error.
+          const cancelTarget = pending ? pending.msgId : (rowError !== undefined ? lastMsgId : null)
           const rowExtras: Pick<SearchRowProps, 'error' | 'onCancelPending'> = {
             ...(rowError !== undefined ? { error: rowError } : {}),
-            ...(pending ? { onCancelPending: () => cancelPending(pending.msgId) } : {}),
+            ...(cancelTarget ? { onCancelPending: () => cancelPending(cancelTarget) } : {}),
           }
           return (
             <SearchRow
@@ -327,9 +370,12 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
   const isQueueing = classification === 'queueing'
   const lockToggle = isQueueing
   const lockAdd = (isQueueing && !error) || classification === 'stale-visual'
+  // Error is sticky after the provider clears pendingAdds on ack.ok=false:
+  // when `error` is set but `pending` is null, still show "tap to retry" so
+  // the user can re-attempt without inspecting an inconsistent "ADD" label.
   const addLabel =
-    !isPending ? 'ADD'
-    : error ? 'tap to retry'
+    error ? 'tap to retry'
+    : !isPending ? 'ADD'
     : classification === 'retry' ? 'tap to retry'
     : classification === 'expired-window' ? 'start new add anyway'
     : classification === 'stale-visual' ? 'expired'
@@ -419,7 +465,7 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
             >
               {addLabel}
             </button>
-            {isPending && onCancelPending && (
+            {onCancelPending && (isPending || error) && (
               <button
                 type="button"
                 onClick={onCancelPending}
