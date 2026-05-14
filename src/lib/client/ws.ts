@@ -25,7 +25,6 @@ export type Connection = {
   state: ServerState | null
   send: (msg: ClientMessage) => void
   ready: boolean
-  ack: (msgId: string) => Promise<{ ok: boolean; error?: string }>
 }
 
 export const useConnection = (opts: {
@@ -35,10 +34,6 @@ export const useConnection = (opts: {
   const [state, setState] = useState<ServerState | null>(null)
   const [ready, setReady] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
-  const ackResolversRef = useRef<Map<string, (v: { ok: boolean; error?: string }) => void>>(new Map())
-  // Track outstanding per-ack timers so they can be cleared on unmount AND
-  // cleared from the map when each ack resolves naturally.
-  const ackTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
   const onMessage = opts.onMessage
   const sessionId = useMemo(() => getSessionId(), [])
 
@@ -66,15 +61,6 @@ export const useConnection = (opts: {
         else if (msg.type === 'state.queue' || msg.type === 'state.player') {
           setState((s) => s && applyDelta(s, msg))
         }
-        else if (msg.type === 'state.ack') {
-          const r = ackResolversRef.current.get(msg.msgId)
-          if (r) {
-            r({ ok: msg.ok, ...(msg.error ? { error: msg.error } : {}) })
-            ackResolversRef.current.delete(msg.msgId)
-            const t = ackTimersRef.current.get(msg.msgId)
-            if (t) { clearTimeout(t); ackTimersRef.current.delete(msg.msgId) }
-          }
-        }
         onMessage?.(msg)
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('karaoke-msg', { detail: msg }))
@@ -92,14 +78,9 @@ export const useConnection = (opts: {
 
     return () => {
       alive = false
+      // Round-1 #12: reconnect-timer cleanup. Without this, an unmount during
+      // the backoff delay would still trigger a (now-orphaned) reconnect.
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
-      // Clear every outstanding ack timeout. Snapshot first so the iteration
-      // isn't disturbed by concurrent resolves (though unmount usually races
-      // alone — defensive nonetheless).
-      const timers = [...ackTimersRef.current.values()]
-      ackTimersRef.current.clear()
-      ackResolversRef.current.clear()
-      for (const t of timers) clearTimeout(t)
       wsRef.current?.close()
     }
   }, [opts.name, sessionId, onMessage])
@@ -108,29 +89,7 @@ export const useConnection = (opts: {
     wsRef.current?.send(JSON.stringify(msg))
   }, [])
 
-  const ack = useCallback((msgId: string) =>
-    new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      // Second ack(msgId) for an in-flight msgId supersedes the first: clear
-      // the prior timer and resolve the prior promise with a `superseded`
-      // error. Without this, the first resolver leaked (kept as garbage in
-      // the closure until the first timer fired, which would then corrupt
-      // this call's state by removing entries we just set).
-      const priorTimer = ackTimersRef.current.get(msgId)
-      if (priorTimer) clearTimeout(priorTimer)
-      const priorResolver = ackResolversRef.current.get(msgId)
-      if (priorResolver) priorResolver({ ok: false, error: 'superseded' })
-      ackResolversRef.current.set(msgId, resolve)
-      const timer = setTimeout(() => {
-        ackTimersRef.current.delete(msgId)
-        if (ackResolversRef.current.has(msgId)) {
-          ackResolversRef.current.delete(msgId)
-          resolve({ ok: false, error: 'timeout' })
-        }
-      }, 6000)
-      ackTimersRef.current.set(msgId, timer)
-    }), [])
-
-  return { state, send, ready, ack }
+  return { state, send, ready }
 }
 
 const applyDelta = (s: ServerState, msg: ServerMessage): ServerState => {

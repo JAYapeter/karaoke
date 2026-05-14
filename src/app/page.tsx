@@ -30,9 +30,8 @@ const isMutatingClientMessage = (m: ClientMessage): boolean => {
 // `useConnection` returns a fresh object every render; we keep the wrapped
 // `send` itself stable across renders by reading the latest `conn` from a
 // ref. The returned Connection object is still fresh per render (we expose
-// `state` / `ready` / `ack` from the latest conn), but consumers that close
-// over `send` get a stable reference, which keeps their useEffect deps
-// quiet.
+// `state` / `ready` from the latest conn), but consumers that close over
+// `send` get a stable reference, which keeps their useEffect deps quiet.
 const useTrackedConn = (conn: Connection): Connection => {
   const { incrementMutations } = usePendingAdds()
   const connRef = useRef(conn)
@@ -41,7 +40,7 @@ const useTrackedConn = (conn: Connection): Connection => {
     if (isMutatingClientMessage(msg)) incrementMutations()
     connRef.current.send(msg)
   }, [incrementMutations])
-  return { state: conn.state, ready: conn.ready, ack: conn.ack, send }
+  return { state: conn.state, ready: conn.ready, send }
 }
 
 // §5.4 iOS keyboard visibility — hysteresis + visualViewport + focus-correlated
