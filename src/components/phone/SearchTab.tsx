@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { SearchResult } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
-import { PrePitchSlider } from './PrePitchSlider'
+import { KeyStepper } from '@/components/phone/KeyStepper'
 
 const REQUEST_TIMEOUT_MS = 8000
 
@@ -66,7 +66,7 @@ export const SearchTab = ({ conn }: { conn: Connection }) => {
         <div className="paper-card paper-grain tape-strip" style={{ position: 'sticky', bottom: 0 }}>
           <div className="uc" style={{ fontSize: 9 }}>▌ Add to queue</div>
           <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 14 }}>{pending.title}</div>
-          <PrePitchSlider value={pitch} onChange={setPitch} />
+          <KeyStepper value={pitch} onChange={setPitch} />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button onClick={() => setPending(null)} className="uc" style={{ padding: '6px 10px' }}>Cancel</button>
             <button

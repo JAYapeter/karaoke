@@ -2,7 +2,7 @@
 import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
-import { PrePitchSlider } from './PrePitchSlider'
+import { KeyStepper } from '@/components/phone/KeyStepper'
 
 const VIDEO_ID = /(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/
 const REQUEST_TIMEOUT_MS = 12000
@@ -56,7 +56,7 @@ export const PasteTab = ({ conn }: { conn: Connection }) => {
         <div className="paper-card paper-grain tape-strip">
           <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 14 }}>{meta.title}</div>
           <div className="uc" style={{ fontSize: 9, color: 'var(--ink-muted)' }}>{Math.floor(meta.durationSec / 60)}:{String(meta.durationSec % 60).padStart(2, '0')}</div>
-          <PrePitchSlider value={pitch} onChange={setPitch} />
+          <KeyStepper value={pitch} onChange={setPitch} />
           <button
             onClick={() => {
               conn.send({ type: 'queue.add', msgId: randomUUID(), videoId: meta.videoId, prePitch: pitch })
