@@ -92,6 +92,12 @@ input, textarea, select { font-size: 16px; }
   min-block-size: 48px !important;
 }
 
+/* §5.4 PasteTab textarea — desktop / portrait default. Compact-landscape
+ * override (4em) is declared later in this file so it wins by source order
+ * within an at-rule of equal specificity. Keep this rule OUT of an inline
+ * style on the textarea: the compact-landscape rule must be able to win. */
+.paste-tab__textarea { min-height: 48px; }
+
 /* Visuals — preserved from prior riso.css, ROTATION DROPPED per §5.1. */
 .riso-noise {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;

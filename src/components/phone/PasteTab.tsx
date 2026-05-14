@@ -119,6 +119,14 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
     const m = url.match(VIDEO_ID)
     if (!m) { setErr('Could not find a YouTube video id in that URL.'); return }
     cleanupRef.current?.()
+    // Round-3 #2: a new paste invalidates any in-flight add from a previous
+    // preview. Tear the per-add ack listener down BEFORE clearing
+    // activeAddMsgId so a late-arriving stale ack can't blank the new meta
+    // / url / addError state.
+    if (ackListenerRef.current) {
+      window.removeEventListener('karaoke-msg', ackListenerRef.current)
+      ackListenerRef.current = null
+    }
     setBusy(true); setErr(null); setMeta(null); setAddError(null); setActiveAddMsgId(null)
     const msgId = randomUUID()
     const onMsg = (e: Event) => {
@@ -226,7 +234,10 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
           placeholder="https://youtube.com/watch?v=…"
           aria-label="YouTube URL"
           rows={compact ? 2 : 3}
-          style={{ width: '100%', padding: 10, fontFamily: 'var(--mono-font)', fontSize: 16, background: 'var(--paper-cream)', color: 'var(--ink-black)', minHeight: 48 }}
+          // Round-3 #3: min-height is in riso.css (.paste-tab__textarea) so
+          // the compact-landscape media-query override can win. An inline
+          // `minHeight: 48` would beat any stylesheet rule by specificity.
+          style={{ width: '100%', padding: 10, fontFamily: 'var(--mono-font)', fontSize: 16, background: 'var(--paper-cream)', color: 'var(--ink-black)' }}
         />
         <button
           type="button"
