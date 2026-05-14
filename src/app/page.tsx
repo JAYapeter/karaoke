@@ -41,7 +41,14 @@ const PhoneApp = () => {
           ))}
         </nav>
       </header>
-      {tab === 'queue' && <QueueView conn={conn} sessionId={sessionId} />}
+      {tab === 'queue' && (
+        <QueueView
+          conn={conn}
+          sessionId={sessionId}
+          sourceConnected={conn.state?.sourceConnected ?? false}
+          sourceReady={conn.state?.sourceReady ?? false}
+        />
+      )}
       {tab === 'search' && <SearchTab conn={conn} />}
       {tab === 'paste' && <PasteTab conn={conn} />}
       <LivePitchSheet conn={conn} sessionId={sessionId} />
