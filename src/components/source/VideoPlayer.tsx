@@ -6,6 +6,8 @@ import { setAudioGraph } from '@/lib/client/audio-graph-ref'
 import type { Connection } from '@/lib/client/ws'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
 import { NowPlayingStrip } from './NowPlayingStrip'
+import { IdleSplash } from './IdleSplash'
+import { SourceOfflineState } from './SourceOfflineState'
 
 export const VideoPlayer = ({ conn }: { conn: Connection }) => {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -117,6 +119,17 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
   }, [graphReady])
 
   const isPlaying = player && player.status !== 'idle'
+  const queueLen = conn.state?.queue.length ?? 0
+  const sourceConnected = conn.state?.sourceConnected ?? false
+  const sourceReady = conn.state?.sourceReady ?? false
+  // §3.3a: source-offline with queued items renders the dedicated offline panel
+  // INSIDE the video frame (replacing the splash). Idle with no queue still
+  // shows the regular splash even when offline — there's nothing to be lost.
+  const showOfflinePanel = !isPlaying && queueLen > 0 && (!sourceConnected || !sourceReady)
+  // §3.3-bis: the transient-recovery "▶ Start next song" button only appears
+  // when the source IS ready (otherwise auto-advance can't fire and the button
+  // would do nothing on tap).
+  const transientWithQueue = queueLen > 0 && sourceConnected && sourceReady
 
   return (
     <div
@@ -127,7 +140,7 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
       }}
     >
       <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
-      {isPlaying && (
+      {isPlaying ? (
         <>
           <div
             className="live-badge uc"
@@ -143,6 +156,10 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
           </div>
           <NowPlayingStrip conn={conn} player={player} />
         </>
+      ) : showOfflinePanel ? (
+        <SourceOfflineState />
+      ) : (
+        <IdleSplash conn={conn} transientWithQueue={transientWithQueue} />
       )}
     </div>
   )
