@@ -27,6 +27,7 @@ const PhoneApp = () => {
   const sessionId = typeof window === 'undefined' ? '' : getSessionId()
   useEffect(() => { setName(getStoredName()) }, [])
   const conn = useConnection({ name })
+  const onAddedSwitchToQueue = () => setTab('queue')
   if (!name) return <NameEntry onSubmit={setName} />
   return (
     <main style={{ paddingBottom: 140 }}>
@@ -49,7 +50,19 @@ const PhoneApp = () => {
           sourceReady={conn.state?.sourceReady ?? false}
         />
       )}
-      {tab === 'search' && <SearchTab conn={conn} />}
+      {tab === 'search' && (
+        <SearchTab
+          conn={conn}
+          currentEpoch={
+            conn.state?.player && conn.state.player.status !== 'idle'
+              ? conn.state.player.epoch
+              : 0
+          }
+          isActive={tab === 'search'}
+          queueLen={conn.state?.queue.length ?? 0}
+          onAddedSwitchToQueue={onAddedSwitchToQueue}
+        />
+      )}
       {tab === 'paste' && <PasteTab conn={conn} />}
       <LivePitchSheet conn={conn} sessionId={sessionId} />
     </main>
