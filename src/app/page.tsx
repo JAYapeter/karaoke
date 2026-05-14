@@ -206,20 +206,40 @@ const PhoneApp = () => {
   // Tray-retry one-shot listeners: each `expired-window` retry from the tray
   // registers a window-level karaoke-msg listener that resolves on ack. Without
   // tracking, they accumulate (user navigates away before the ack arrives, or
-  // the ack never arrives at all). We track them so unmount drains the set,
+  // the ack never arrives at all). We track them so unmount drains the map,
   // and each entry carries a 30 s timeout that auto-cleans + surfaces an error
   // toast if no ack arrives.
-  const trayRetryEntriesRef = useRef<Set<{ listener: EventListener; timer: ReturnType<typeof setTimeout> }>>(new Set())
+  //
+  // Round-3 #4: keyed by msgId so a user dismissing the tray entry (which
+  // removes it from pendingAdds) can also tear down the matching listener +
+  // timer. Without this, a "tap to retry" from the tray that the user then
+  // dismisses would still surface "Added — N" or "Add failed" toasts when
+  // the late ack arrives.
+  const trayRetryEntriesRef = useRef<Map<string, { listener: EventListener; timer: ReturnType<typeof setTimeout> }>>(new Map())
   useEffect(() => {
     const entries = trayRetryEntriesRef.current
     return () => {
-      for (const e of entries) {
+      for (const e of entries.values()) {
         window.removeEventListener('karaoke-msg', e.listener)
         clearTimeout(e.timer)
       }
       entries.clear()
     }
   }, [])
+  // Round-3 #4: drain entries whose msgId is no longer in pendingAdds (i.e.
+  // the user dismissed the tray row). Done as an effect rather than inline in
+  // PendingAddsTray's onDismiss because dismiss happens inside the tray
+  // component without access to this ref; pendingAdds is the source of truth.
+  useEffect(() => {
+    const entries = trayRetryEntriesRef.current
+    for (const [msgId, e] of entries) {
+      if (!pendingAdds.has(msgId)) {
+        window.removeEventListener('karaoke-msg', e.listener)
+        clearTimeout(e.timer)
+        entries.delete(msgId)
+      }
+    }
+  }, [pendingAdds])
 
   // Mount-version: bumps whenever any conditionally-mounted occluder flips
   // visibility (offline banner — gated by showOfflineBanner — or pending
@@ -287,15 +307,15 @@ const PhoneApp = () => {
               // Both the listener and a 30 s timeout fallback are tracked in
               // trayRetryEntriesRef so unmount drains every outstanding one,
               // and a never-ack scenario doesn't leak the listener forever.
-              const setRef = trayRetryEntriesRef.current
-              let registered: { listener: EventListener; timer: ReturnType<typeof setTimeout> } | null = null
+              const mapRef = trayRetryEntriesRef.current
               const onAck: EventListener = (e) => {
                 const m = (e as CustomEvent<ServerMessage>).detail
                 if (m.type !== 'state.ack' || m.msgId !== newMsgId) return
                 window.removeEventListener('karaoke-msg', onAck)
-                if (registered) {
-                  clearTimeout(registered.timer)
-                  setRef.delete(registered)
+                const reg = mapRef.get(newMsgId)
+                if (reg) {
+                  clearTimeout(reg.timer)
+                  mapRef.delete(newMsgId)
                 }
                 if (m.ok) {
                   // Take the max with the local snapshot+1: a stale state.queue
@@ -311,11 +331,10 @@ const PhoneApp = () => {
               }
               const timer = setTimeout(() => {
                 window.removeEventListener('karaoke-msg', onAck)
-                if (registered) setRef.delete(registered)
+                mapRef.delete(newMsgId)
                 showToast({ level: 'error', message: '▌ Add failed — no response from server' })
               }, 30_000)
-              registered = { listener: onAck, timer }
-              setRef.add(registered)
+              mapRef.set(newMsgId, { listener: onAck, timer })
               window.addEventListener('karaoke-msg', onAck)
               conn.send({ type: 'queue.add', msgId: newMsgId, videoId: entry.videoId, prePitch: entry.prePitch })
               return
