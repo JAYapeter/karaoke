@@ -38,7 +38,10 @@ export const pendingAddsReducer = (
         title: action.title,
         prePitch: action.prePitch,
         sentAt: action.sentAt,
-        mutationsSentSince: 0,
+        // -1 so the originating queue.add's own incrementMutations bump lands
+        // this entry at 0. Otherwise every entry starts at 1 after its own send
+        // and the 80-mutation threshold trips at 79 user actions (off-by-one).
+        mutationsSentSince: -1,
         epochAtSent: action.epoch,
       })
       return next

@@ -65,12 +65,24 @@ describe('pendingAdds reducer', () => {
     expect(s3.has('b')).toBe(true)
   })
 
+  it('add starts mutationsSentSince at -1 so the originating queue.add bumps it to 0', () => {
+    // The useTrackedConn wrapper fires incrementMutations BEFORE every
+    // mutating send, including the originating queue.add. If new entries
+    // started at 0, the originating send would bump them to 1 and the
+    // 80-mutation expired-window threshold would trip at 79 user actions
+    // instead of 80 (off-by-one).
+    const s1 = pendingAddsReducer(initialPendingAdds, addAction())
+    expect(s1.get('m1')?.mutationsSentSince).toBe(-1)
+  })
+
   it('incrementMutations advances mutationsSentSince on EVERY entry', () => {
     const s1 = pendingAddsReducer(initialPendingAdds, addAction({ msgId: 'a' }))
     const s2 = pendingAddsReducer(s1, addAction({ msgId: 'b' }))
+    // After two adds, both entries are at -1. Two increments → +1.
     const s3 = pendingAddsReducer(s2, { type: 'incrementMutations' })
-    expect(s3.get('a')?.mutationsSentSince).toBe(1)
-    expect(s3.get('b')?.mutationsSentSince).toBe(1)
+    const s4 = pendingAddsReducer(s3, { type: 'incrementMutations' })
+    expect(s4.get('a')?.mutationsSentSince).toBe(1)
+    expect(s4.get('b')?.mutationsSentSince).toBe(1)
   })
 
   describe('classifyPendingState', () => {
