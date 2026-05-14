@@ -1,6 +1,7 @@
 'use client'
 import { createContext, useCallback, useContext, useEffect, useMemo, useReducer, type ReactNode } from 'react'
 import type { ServerMessage } from '@/lib/types/protocol'
+import { useToaster } from '@/components/shared/Toaster'
 import {
   initialPendingAdds,
   pendingAddsReducer,
@@ -22,6 +23,11 @@ const RECENT_ADD_WARNING_MS = 10_000
 
 export const PendingAddsProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(pendingAddsReducer, initialPendingAdds)
+  // Provider must be mounted INSIDE <Toaster> (see PhoneApp wrap). The Toaster
+  // provides the imperative showToast hook directly — calling it avoids the
+  // race where a synth-dispatched CustomEvent fires before Toaster's window
+  // listener mounts (it does in strict mode's first pass).
+  const { showToast } = useToaster()
 
   // §4.3 "Persistence across reloads + recent-add warning." pendingAdds is
   // in-memory only, so a phone reload drops the map. Mitigation: a single
@@ -36,12 +42,15 @@ export const PendingAddsProvider = ({ children }: { children: ReactNode }) => {
       if (!isFinite(ts)) return
       const age = Date.now() - ts
       if (age >= 0 && age < RECENT_ADD_WARNING_MS) {
-        // TODO(Task 10): dispatch recent-add warning toast once Toaster exposes useToaster.
+        showToast({
+          level: 'warn',
+          message: 'A recent add may still be processing — wait a moment before retrying',
+        })
       }
     } catch {
       // localStorage unavailable; silently skip.
     }
-  }, [])
+  }, [showToast])
   const add = useCallback((msgId: string, videoId: string, prePitch: number, epoch: number, title?: string) =>
     dispatch({ type: 'add', msgId, videoId, title, prePitch, sentAt: Date.now(), epoch }), [])
   const ack = useCallback((msgId: string, ok: boolean, error?: string) =>
