@@ -110,6 +110,15 @@ export const useConnection = (opts: {
 
   const ack = useCallback((msgId: string) =>
     new Promise<{ ok: boolean; error?: string }>((resolve) => {
+      // Second ack(msgId) for an in-flight msgId supersedes the first: clear
+      // the prior timer and resolve the prior promise with a `superseded`
+      // error. Without this, the first resolver leaked (kept as garbage in
+      // the closure until the first timer fired, which would then corrupt
+      // this call's state by removing entries we just set).
+      const priorTimer = ackTimersRef.current.get(msgId)
+      if (priorTimer) clearTimeout(priorTimer)
+      const priorResolver = ackResolversRef.current.get(msgId)
+      if (priorResolver) priorResolver({ ok: false, error: 'superseded' })
       ackResolversRef.current.set(msgId, resolve)
       const timer = setTimeout(() => {
         ackTimersRef.current.delete(msgId)
