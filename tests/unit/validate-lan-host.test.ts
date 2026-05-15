@@ -22,6 +22,19 @@ describe('isValidLanHost', () => {
     expect(isValidLanHost('[::1]')).toBe(true)
     expect(isValidLanHost('[::1]:3000')).toBe(true)
     expect(isValidLanHost('[fe80::1]:3000')).toBe(true)
+    expect(isValidLanHost('[2001:db8::1]:3000')).toBe(true)
+  })
+
+  it('rejects bracketed payloads that are not valid IPv6', () => {
+    // The regex's `[0-9a-fA-F:]+` is permissive — it would accept these
+    // without `net.isIPv6()` strictness. Phones' URL parsers reject them,
+    // so the QR would silently encode a dead link.
+    expect(isValidLanHost('[1]:3000')).toBe(false) // single group, not IPv6
+    expect(isValidLanHost('[::1::1]:3000')).toBe(false) // double `::`
+    expect(
+      isValidLanHost('[1234:5678:9abc:def0:1234:5678:9abc:def0:extra]:3000'),
+    ).toBe(false) // >8 groups (also has non-hex 'extra' but the length alone disqualifies)
+    expect(isValidLanHost('[gggg::1]:3000')).toBe(false) // non-hex chars
   })
 
   it('rejects empty string', () => {

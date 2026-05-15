@@ -9,6 +9,10 @@
  * Rejects:
  *  - Anything containing `://`, `?`, `#`, whitespace
  *  - Unbracketed IPv6, malformed `:port`, scheme prefixes
+ *  - Bracketed payloads that aren't RFC-compliant IPv6 (e.g. `[1]`,
+ *    `[::1::1]`, `[1:2:3:4:5:6:7:8:9]`) — these would otherwise pass the
+ *    permissive `[0-9a-fA-F:]+` character class but break URL parsers on
+ *    the phone side, producing a dead QR with no warning.
  *
  * The intent is to prevent broken QR encodings — `KARAOKE_LAN_HOST` ships
  * verbatim into the join URL composed in `useJoinUrl`. A malformed value
@@ -17,6 +21,8 @@
  * Pure / no-side-effects so it can be unit-tested without spinning up the
  * server.
  */
+
+import { isIPv6 } from 'node:net'
 
 const VALID_HOST_RE =
   /^([\w.-]+|\[[0-9a-fA-F:]+\])(:\d+)?$/
@@ -29,6 +35,16 @@ export const isValidLanHost = (value: string): boolean => {
   if (value.includes('://')) return false
   const m = VALID_HOST_RE.exec(value)
   if (!m) return false
+  const host = m[1]!
+  // Bracketed payload → must be a real IPv6 address. The regex's
+  // `[0-9a-fA-F:]+` is permissive (it accepts `[1]`, `[::1::1]`, or 9-group
+  // monstrosities), so delegate strict validation to Node's `net.isIPv6`,
+  // which implements the full RFC 4291 grammar (incl. `::` collapse rules
+  // and the IPv4-in-IPv6 dotted-quad tail).
+  if (host.startsWith('[')) {
+    const inner = host.slice(1, -1)
+    if (!isIPv6(inner)) return false
+  }
   // Tighten port to a real TCP range. The regex's `(:\d+)?` would otherwise
   // accept `host:0` / `host:65536` / `host:99999` etc., which still encode
   // into a QR but produce URLs browsers refuse to open. Reject early so
