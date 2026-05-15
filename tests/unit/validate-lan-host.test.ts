@@ -50,4 +50,18 @@ describe('isValidLanHost', () => {
     expect(isValidLanHost('host:abc')).toBe(false)
     expect(isValidLanHost('host:')).toBe(false)
   })
+
+  it('rejects out-of-range TCP ports', () => {
+    // Port 0 is reserved; 65536+ exceeds the 16-bit TCP range. Browsers
+    // refuse to open URLs with these ports, so a QR encoding them is dead.
+    expect(isValidLanHost('host:0')).toBe(false)
+    expect(isValidLanHost('host:65536')).toBe(false)
+    expect(isValidLanHost('host:99999')).toBe(false)
+    expect(isValidLanHost('host:1234567')).toBe(false)
+  })
+
+  it('accepts boundary TCP ports', () => {
+    expect(isValidLanHost('host:1')).toBe(true)
+    expect(isValidLanHost('host:65535')).toBe(true)
+  })
 })

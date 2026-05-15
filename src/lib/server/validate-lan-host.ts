@@ -27,5 +27,17 @@ export const isValidLanHost = (value: string): boolean => {
   // even though the regex anchor would also reject them.
   if (/[\s?#]/.test(value)) return false
   if (value.includes('://')) return false
-  return VALID_HOST_RE.test(value)
+  const m = VALID_HOST_RE.exec(value)
+  if (!m) return false
+  // Tighten port to a real TCP range. The regex's `(:\d+)?` would otherwise
+  // accept `host:0` / `host:65536` / `host:99999` etc., which still encode
+  // into a QR but produce URLs browsers refuse to open. Reject early so
+  // operators see the "invalid LAN host" warning instead of a dead QR.
+  const portStr = m[2]?.slice(1) // drop leading ':' (e.g. ':3000' → '3000')
+  if (portStr) {
+    if (portStr.length > 5) return false
+    const portNum = Number(portStr)
+    if (portNum < 1 || portNum > 65535) return false
+  }
+  return true
 }
