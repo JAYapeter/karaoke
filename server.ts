@@ -11,6 +11,7 @@ import { Dispatcher, createIdempotencyState, type IO } from './src/lib/server/di
 import type { ClientMessage, ServerMessage } from './src/lib/types/protocol'
 import { log } from './src/lib/log'
 import { runYtDlp } from './src/lib/ytdlp/runner'
+import { isValidLanHost } from './src/lib/server/validate-lan-host'
 
 const dev = process.env.NODE_ENV !== 'production'
 const app = next({ dev })
@@ -89,14 +90,29 @@ const printBanner = async () => {
 
 app.prepare().then(() => {
   // Resolve the host phones should hit (for the source-page QR). Env override
-  // wins verbatim (no port suffix appended); otherwise reuse the same LAN-IP
-  // picker that produces the boot banner. Loopback-only → null, so the client
-  // falls back to window.location.host.
+  // wins verbatim (no port suffix appended) IF it parses as a valid
+  // <host>(:<port>) — anything else is rejected with a console.warn and we
+  // fall through to auto-detection. This prevents shipping a broken QR when
+  // KARAOKE_LAN_HOST is misconfigured (e.g. "://malformed",
+  // "http://10.0.0.1:3000", or unbracketed IPv6). Loopback-only → null, so
+  // the client falls back to window.location.host.
   const overrideHost = process.env.KARAOKE_LAN_HOST?.trim()
   const ip = lanIp()
-  const resolvedHost = overrideHost && overrideHost.length > 0
-    ? overrideHost
-    : ip ? `${ip}:${PORT}` : null
+  let resolvedHost: string | null
+  if (overrideHost && overrideHost.length > 0) {
+    if (isValidLanHost(overrideHost)) {
+      resolvedHost = overrideHost
+    } else {
+      console.warn(
+        `KARAOKE_LAN_HOST=${JSON.stringify(overrideHost)} is not a valid <host>(:<port>) ` +
+          `— ignoring; expected e.g. "shimokita.local:3000" or "10.0.0.22:3000". ` +
+          `Falling back to auto-detection.`,
+      )
+      resolvedHost = ip ? `${ip}:${PORT}` : null
+    }
+  } else {
+    resolvedHost = ip ? `${ip}:${PORT}` : null
+  }
   store.setServerHost(resolvedHost)
 
   const server = createServer((req, res) => handle(req, res, parse(req.url ?? '/', true)))
