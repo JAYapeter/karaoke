@@ -1,17 +1,10 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import qrcode from 'qrcode'
+import { useJoinUrl } from '@/lib/client/use-join-url'
 
-export type JoinUrlModalProps = { open: boolean; onClose: () => void }
+export type JoinUrlModalProps = { open: boolean; onClose: () => void; serverHost: string | null }
 
-const useJoinUrl = () => {
-  const [url, setUrl] = useState<string>('')
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    setUrl(`${window.location.protocol}//${window.location.host}/`)
-  }, [])
-  return url
-}
 const useScrollLock = (locked: boolean) => {
   useEffect(() => {
     if (!locked || typeof document === 'undefined') return
@@ -43,11 +36,11 @@ const useCompactLandscape = (): boolean => {
   return compact
 }
 
-export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
+export const JoinUrlModal = ({ open, onClose, serverHost }: JoinUrlModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const closeBtnRef = useRef<HTMLButtonElement>(null)
-  const url = useJoinUrl()
+  const url = useJoinUrl(serverHost)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const compact = useCompactLandscape()
@@ -60,7 +53,15 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
 
   useEffect(() => {
     if (!url) return
-    qrcode.toDataURL(url, { margin: 1, width: qrPx * 1.5 }).then(setQrDataUrl).catch(() => setQrDataUrl(''))
+    // Cancel late promises so rapid url/qrPx changes (e.g. orientation
+    // flip toggling compact landscape) can't overwrite a fresh data URL
+    // with a stale one, and so unmounting mid-encode doesn't pin the
+    // resolved buffer in memory (StrictMode doubles the in-flight count).
+    let cancelled = false
+    qrcode.toDataURL(url, { margin: 1, width: qrPx * 1.5 })
+      .then((d) => { if (!cancelled) setQrDataUrl(d) })
+      .catch(() => { if (!cancelled) setQrDataUrl('') })
+    return () => { cancelled = true }
   }, [url, qrPx])
   useScrollLock(open)
   useEffect(() => {
@@ -148,6 +149,7 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
     if (e.target === dialogRef.current) stableClose()
   }
   const onCopy = async () => {
+    if (!url) return
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true); setTimeout(() => setCopied(false), 2000)
@@ -167,10 +169,15 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
       }}
     >
       <div className="uc" style={{ fontSize: 12, letterSpacing: '0.2em' }}>scan to join</div>
-      <div style={{ width: qrPx, height: qrPx, background: 'var(--paper-cream)' }}>
-        {qrDataUrl && <img src={qrDataUrl} alt={`Join URL ${url}`} width={qrPx} height={qrPx} style={{ display: 'block' }} />}
+      {/* `useJoinUrl` returns '' on the source page (loaded as
+          http://localhost:3000) until `state.full` arrives with the LAN host.
+          Render a placeholder until then — phones can't reach localhost. */}
+      <div style={{ width: qrPx, height: qrPx, background: 'var(--paper-cream)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {url
+          ? qrDataUrl && <img src={qrDataUrl} alt={`Join URL ${url}`} width={qrPx} height={qrPx} style={{ display: 'block' }} />
+          : <span className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>connecting…</span>}
       </div>
-      <div className="uc" style={{ fontSize: 13, wordBreak: 'break-all', textAlign: 'center' }}>{url}</div>
+      <div className="uc" style={{ fontSize: 13, wordBreak: 'break-all', textAlign: 'center' }}>{url || 'waiting for LAN host…'}</div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" className="hit-target uc" onClick={onCopy} style={{ padding: '8px 12px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 12 }}>
           {copied ? 'copied' : 'copy URL'}
@@ -184,7 +191,7 @@ export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
 
   if (supportsDialog()) {
     return (
-      <dialog ref={dialogRef} onClick={onBackdropTap} style={{ padding: 0, border: 'none', background: 'transparent', color: 'inherit' }}>
+      <dialog ref={dialogRef} aria-label="Join URL" onClick={onBackdropTap} style={{ padding: 0, border: 'none', background: 'transparent', color: 'inherit' }}>
         {Body}
       </dialog>
     )

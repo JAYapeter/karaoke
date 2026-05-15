@@ -99,6 +99,77 @@ input, textarea, select { font-size: 16px; }
   min-block-size: 48px !important;
 }
 
+/* §5 affordance utility — applies to interactive icon-glyph buttons.
+ * `background: transparent` lives on the BASE class so the user-agent <button>
+ * default (light gray) doesn't show through, AND so consumers don't need an
+ * inline `background: transparent` (which would shadow the :hover rule below
+ * since inline styles outrank class selectors). The `.qr-chip` rule below
+ * overrides this with the cream background it needs. */
+.icon-btn {
+  cursor: pointer;
+  border-radius: 2px;
+  background: transparent;
+  transition: background-color 150ms ease-out;
+}
+/* Default tint — for buttons sitting on the cream `.paper-card` surface. */
+.icon-btn:hover {
+  background-color: rgba(10, 8, 8, 0.08);
+}
+/* Inverted tint — for buttons sitting on the dark video-frame / ink-black surface. */
+.icon-btn--on-dark:hover {
+  background-color: rgba(255, 248, 224, 0.08);
+}
+.icon-btn:active {
+  animation: tap-flash 150ms ease-out;
+}
+/* No disabled-state rules: every current `.icon-btn` consumer (SetlistPanel
+   ⤴/×/🔀, NowPlayingStrip pitch + transport, QrPanel chip) is always
+   enabled — no JSX sets `disabled` or `aria-disabled` on these. The
+   speculative disabled-state rules previously here were dead AND incomplete
+   (didn't suppress tap-flash). Spec §5.4 also notes the disabled state is
+   out of scope for this round. Add rules back when an actual disabled
+   consumer appears. */
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn { transition: none; }
+  .icon-btn:active { animation: none; }
+}
+
+/* QR chip — opaque cream background must sit OVER the `.icon-btn` transparent
+ * base so the QR image isn't backed by the dark video-frame surface. Kept in
+ * CSS (not inline) so any future `:hover` / state rules from `.icon-btn` can
+ * win via the cascade — an inline `background` would shadow them.
+ *
+ * Affordance is OUTLINE-BASED on hover/focus, not background-based: the
+ * chip's <img> child fills the entire button (width:100%/height:100%) so
+ * any `:hover` background-color tint inherited from `.icon-btn` is occluded
+ * by the QR image. Painting the outline outside the box keeps the
+ * affordance visible. `.icon-btn` is still applied to the chip for cursor
+ * + tap-flash + reduced-motion override; its hover tint becomes harmless
+ * dead behavior.
+ *
+ * NOTE on keyboard focus: the base rule reserves a 2px transparent outline
+ * so :hover and :focus-visible only need to swap the color (no layout
+ * shift, no transition jump). The global `:where(button):focus-visible`
+ * rule (red hanko-red ring) ties on specificity (both 0,1,0) but loses on
+ * source order to `.qr-chip`'s transparent outline — so we explicitly
+ * restore the brand red ring on `.qr-chip:focus-visible` here. */
+.qr-chip {
+  background: var(--paper-cream);
+  transition: outline-color 150ms ease-out;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+.qr-chip:hover {
+  outline-color: var(--ink-deep);
+}
+.qr-chip:focus-visible {
+  outline-color: var(--hanko-red);
+}
+@media (prefers-reduced-motion: reduce) {
+  .qr-chip { transition: none; }
+}
+
 /* §5.4 PasteTab textarea — desktop / portrait default. Compact-landscape
  * override (4em) is declared later in this file so it wins by source order
  * within an at-rule of equal specificity. Keep this rule OUT of an inline
@@ -208,12 +279,12 @@ input, textarea, select { font-size: 16px; }
   inset: 0;
 }
 
-/* §3 source grid. Desktop: video + 160px rail. Mobile: stacked.
+/* §3 source grid. Desktop: video + 240px rail. Mobile: stacked.
    Vertical padding is owned by the rule above (which includes safe-area
    + 12px breathing room); this rule sets only grid layout. */
 .source-root {
   display: grid;
-  grid-template-columns: 1fr 160px;
+  grid-template-columns: 1fr 240px;
   gap: 12px;
 }
 .source-root__video { grid-column: 1; }
@@ -238,12 +309,28 @@ input, textarea, select { font-size: 16px; }
   align-items: center;
   gap: 8px;
 }
+/* Flex slot inside .setlist-row that holds the row index/name prefix and the
+   marquee'd title. min-width:0 lets the marquee child shrink so its overflow
+   detection works. */
+.setlist-row__title-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.setlist-row__index { flex: 0 0 auto; }
+/* The row title text (rendered by MarqueeText). MarqueeText forwards
+   `className` to its outer container but NOT inline `style`, so the previous
+   inline italic display-font + 14px font-size live here as CSS so the inner
+   `<span>` inherits them. flex:1 1 auto + min-width:0 give the marquee a
+   finite parent width to detect overflow against. */
 .setlist-row__title {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-family: var(--display-font);
+  font-style: italic;
+  font-size: 14px;
 }
 .setlist-row__actions {
   flex: 0 0 auto;
@@ -297,11 +384,14 @@ input, textarea, select { font-size: 16px; }
   .search-row[data-expanded="1"] .search-row__body { max-height: none; }
 }
 
-/* §5.5 YOU'RE UP tap flash + mount. */
+/* §5.5 YOU'RE UP tap flash + mount. Uses `background-color` (longhand) — NOT
+   `background` (shorthand) — so consumers' class-set `background` (e.g.
+   .qr-chip's cream backing) and any `background-image` are preserved during
+   the flash. The shorthand would wipe them. */
 @keyframes tap-flash {
-  0%   { background: transparent; }
-  20%  { background: var(--hanko-red); }
-  100% { background: transparent; }
+  0%   { background-color: transparent; }
+  20%  { background-color: var(--hanko-red); }
+  100% { background-color: transparent; }
 }
 .youre-up__btn:active { animation: tap-flash 120ms ease-out; }
 .youre-up { opacity: 0; transition: opacity 150ms ease-out; }

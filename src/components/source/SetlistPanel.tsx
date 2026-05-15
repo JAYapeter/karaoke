@@ -6,6 +6,7 @@ import type { Connection } from '@/lib/client/ws'
 import type { QueueItem } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
 import { useToaster } from '@/components/shared/Toaster'
+import { MarqueeText } from '@/components/shared/MarqueeText'
 
 const VISIBLE_CAP = 8
 const UNDO_TTL_MS = 6000
@@ -114,9 +115,12 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
         {qrChip}
         <div className="uc setlist-label" style={{ fontSize: 12 }}>SETLIST · {queue.length}</div>
         <button
-          type="button" className="shuffle-btn hit-target uc"
+          type="button" className="shuffle-btn hit-target uc icon-btn"
           aria-label="Shuffle queue" onClick={shuffle}
-          style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}
+          // No inline `background` — the `.icon-btn` class owns transparent at
+          // rest so the `:hover` tint rule can apply (inline `background` would
+          // shadow class-defined hover via specificity).
+          style={{ color: 'var(--ink-black)', fontSize: 14 }}
         >🔀</button>
       </div>
       <div style={{ borderBottom: '1px solid var(--ink-deep)', margin: '6px 0' }} />
@@ -127,15 +131,16 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
       )}
       {visible.map((it, i) => (
         <div key={it.id} className={`setlist-row ${i > 0 ? 'paper-card--minor' : ''}`} style={{ padding: '4px 0' }}>
-          <div className="setlist-row__title">
-            <span className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)', marginRight: 8 }}>
+          <div className="setlist-row__title-wrap">
+            <span className="uc setlist-row__index" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
               {String(i + 2).padStart(2, '0')} · {it.queuedBy.name.toUpperCase()}
             </span>
-            <span style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 14 }}>{it.title}</span>
+            <MarqueeText text={it.title} className="setlist-row__title" />
           </div>
           <div className="setlist-row__actions">
-            <button type="button" aria-label="Move to top" onClick={() => moveTop(it)} className="uc" style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 12 }}>⤴</button>
-            <button type="button" aria-label="Remove from queue" onClick={() => remove(it)} className="uc" style={{ background: 'transparent', color: 'var(--hanko-red)', fontSize: 12 }}>✕</button>
+            {/* No inline `background` — `.icon-btn` class owns transparent at rest. */}
+            <button type="button" aria-label="Move to top" onClick={() => moveTop(it)} className="uc icon-btn" style={{ color: 'var(--ink-black)', fontSize: 12 }}>⤴</button>
+            <button type="button" aria-label="Remove from queue" onClick={() => remove(it)} className="uc icon-btn" style={{ color: 'var(--hanko-red)', fontSize: 12 }}>✕</button>
           </div>
         </div>
       ))}

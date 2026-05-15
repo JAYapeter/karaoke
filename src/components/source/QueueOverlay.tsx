@@ -28,14 +28,14 @@ export const QueueOverlay = ({ conn }: { conn: Connection }) => {
 
   return (
     <>
-      {!isMobile && <QrPanel variant="full" />}
+      {!isMobile && <QrPanel variant="full" serverHost={conn.state?.serverHost ?? null} />}
       <SetlistPanel
         conn={conn}
         queue={s.queue}
-        qrChip={isMobile ? <QrPanel variant="chip" onOpenJoinModal={() => setJoinModalOpen(true)} /> : null}
+        qrChip={isMobile ? <QrPanel variant="chip" onOpenJoinModal={() => setJoinModalOpen(true)} serverHost={conn.state?.serverHost ?? null} joinModalOpen={joinModalOpen} /> : null}
       />
       <VolumePanel />
-      <JoinUrlModal open={joinModalOpen} onClose={() => setJoinModalOpen(false)} />
+      <JoinUrlModal open={joinModalOpen} onClose={() => setJoinModalOpen(false)} serverHost={conn.state?.serverHost ?? null} />
     </>
   )
 }

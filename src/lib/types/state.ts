@@ -37,6 +37,7 @@ export type ServerState = {
   player: PlayerState
   sourceConnected: boolean
   sourceReady: boolean
+  serverHost: string | null
 }
 
 export type SearchResult = {
