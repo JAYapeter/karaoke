@@ -1,15 +1,17 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import qrcode from 'qrcode'
+import { deriveJoinHost } from '@/lib/client/derive-join-host'
 
-export type JoinUrlModalProps = { open: boolean; onClose: () => void }
+export type JoinUrlModalProps = { open: boolean; onClose: () => void; serverHost: string | null }
 
-const useJoinUrl = () => {
+const useJoinUrl = (serverHost: string | null) => {
   const [url, setUrl] = useState<string>('')
   useEffect(() => {
     if (typeof window === 'undefined') return
-    setUrl(`${window.location.protocol}//${window.location.host}/`)
-  }, [])
+    const host = deriveJoinHost(serverHost, window.location.host)
+    setUrl(`${window.location.protocol}//${host}/`)
+  }, [serverHost])
   return url
 }
 const useScrollLock = (locked: boolean) => {
@@ -43,11 +45,11 @@ const useCompactLandscape = (): boolean => {
   return compact
 }
 
-export const JoinUrlModal = ({ open, onClose }: JoinUrlModalProps) => {
+export const JoinUrlModal = ({ open, onClose, serverHost }: JoinUrlModalProps) => {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const closeBtnRef = useRef<HTMLButtonElement>(null)
-  const url = useJoinUrl()
+  const url = useJoinUrl(serverHost)
   const [qrDataUrl, setQrDataUrl] = useState<string>('')
   const [copied, setCopied] = useState(false)
   const compact = useCompactLandscape()

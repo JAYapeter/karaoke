@@ -1,20 +1,23 @@
 'use client'
 import { useEffect, useState } from 'react'
 import qrcode from 'qrcode'
+import { deriveJoinHost } from '@/lib/client/derive-join-host'
 
 type Variant = 'full' | 'chip'
 
 export type QrPanelProps = {
   variant?: Variant
   onOpenJoinModal?: () => void
+  serverHost: string | null
 }
 
-const useJoinUrl = () => {
+const useJoinUrl = (serverHost: string | null) => {
   const [url, setUrl] = useState<string>('')
   useEffect(() => {
     if (typeof window === 'undefined') return
-    setUrl(`${window.location.protocol}//${window.location.host}/`)
-  }, [])
+    const host = deriveJoinHost(serverHost, window.location.host)
+    setUrl(`${window.location.protocol}//${host}/`)
+  }, [serverHost])
   return url
 }
 const useQrDataUrl = (url: string, size: number) => {
@@ -26,8 +29,8 @@ const useQrDataUrl = (url: string, size: number) => {
   return dataUrl
 }
 
-export const QrPanel = ({ variant = 'full', onOpenJoinModal }: QrPanelProps) => {
-  const url = useJoinUrl()
+export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPanelProps) => {
+  const url = useJoinUrl(serverHost)
   // Gate the unused variant's hook so we only encode one QR at a time. The
   // hook bails when url is empty, so passing '' skips the qrcode work.
   const fullDataUrl = useQrDataUrl(variant === 'full' ? url : '', 220)
