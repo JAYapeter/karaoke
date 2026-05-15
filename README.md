@@ -32,3 +32,10 @@ npm run dev             # prints LAN URL, source token, QR
 ## Tech notes
 
 See `docs/superpowers/specs/2026-05-06-karaoke-app-design.md` for the full design.
+
+## Environment variables
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `KARAOKE_LAN_HOST` | (auto-detected from `os.networkInterfaces()`) | Override the host string the source-page QR encodes for phones to scan. Useful when the server is multi-homed (Wi-Fi + Ethernet + VPN) or reached via a custom DNS hostname (e.g. `shimokita.local:3000`). Set to `"<host-or-ip>:<port>"`. When unset, the server picks the same address it prints in the boot banner. When the auto-detection finds nothing (loopback only), the source page falls back to `window.location.host`. |
+
