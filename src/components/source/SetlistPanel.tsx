@@ -115,7 +115,7 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
         {qrChip}
         <div className="uc setlist-label" style={{ fontSize: 12 }}>SETLIST · {queue.length}</div>
         <button
-          type="button" className="shuffle-btn hit-target uc"
+          type="button" className="shuffle-btn hit-target uc icon-btn"
           aria-label="Shuffle queue" onClick={shuffle}
           style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}
         >🔀</button>
@@ -135,8 +135,8 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
             <MarqueeText text={it.title} className="setlist-row__title" />
           </div>
           <div className="setlist-row__actions">
-            <button type="button" aria-label="Move to top" onClick={() => moveTop(it)} className="uc" style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 12 }}>⤴</button>
-            <button type="button" aria-label="Remove from queue" onClick={() => remove(it)} className="uc" style={{ background: 'transparent', color: 'var(--hanko-red)', fontSize: 12 }}>✕</button>
+            <button type="button" aria-label="Move to top" onClick={() => moveTop(it)} className="uc icon-btn" style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 12 }}>⤴</button>
+            <button type="button" aria-label="Remove from queue" onClick={() => remove(it)} className="uc icon-btn" style={{ background: 'transparent', color: 'var(--hanko-red)', fontSize: 12 }}>✕</button>
           </div>
         </div>
       ))}

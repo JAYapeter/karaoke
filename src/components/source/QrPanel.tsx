@@ -40,7 +40,7 @@ export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPan
     return (
       <button
         type="button"
-        className="qr-chip hit-target"
+        className="qr-chip hit-target icon-btn icon-btn--on-dark"
         aria-label="Show join URL"
         onClick={onOpenJoinModal}
         style={{ padding: 0, background: 'var(--paper-cream)', border: '1px solid var(--ink-deep)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
