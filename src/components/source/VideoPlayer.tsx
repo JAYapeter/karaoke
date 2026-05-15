@@ -3,8 +3,12 @@ import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useRef, useState } from 'react'
 import { buildAudioGraph, buildAudioGraphNoPitch, type AudioGraph } from '@/lib/client/audio-graph'
 import { setAudioGraph } from '@/lib/client/audio-graph-ref'
+import { createSourceReadyGate, type SourceReadyGate } from '@/lib/client/source-ready-gate'
 import type { Connection } from '@/lib/client/ws'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
+import { NowPlayingStrip } from './NowPlayingStrip'
+import { IdleSplash } from './IdleSplash'
+import { SourceOfflineState } from './SourceOfflineState'
 
 export const VideoPlayer = ({ conn }: { conn: Connection }) => {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -21,6 +25,10 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
 
   // Mount the audio graph exactly once. Strict-mode double-effect handled
   // via the `cancelled` flag: if we tear down before the async build resolves, destroy on arrival.
+  // The source.ready handshake is intentionally NOT sent from here — the
+  // [conn.ready, graphReady] effect below owns it so we re-send on every
+  // WebSocket reconnect (the audio graph survives, but the server clears
+  // sourceReady on the old socket's close).
   useEffect(() => {
     let cancelled = false
     if (!mountRef.current) return
@@ -38,12 +46,18 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
         graphRef.current = g
         setAudioGraph(g)
         setGraphReady(true)
-        connRef.current.send({ type: 'source.ready', msgId: randomUUID() })
         if (bypassed) {
-          connRef.current.send({
-            type: 'player.error', epoch: 0, itemId: '',
-            message: 'Pitch shift unavailable — playing original key',
-          } as any)
+          // CLIENT-LOCAL toast: dispatching `player.error` to the server doesn't
+          // work here because epoch=0/itemId='' is rejected by the stale-epoch
+          // guard in dispatch.ts before the broadcast fires. The Toaster's
+          // `karaoke-msg` listener handles synthetic `toast` ServerMessages.
+          window.dispatchEvent(new CustomEvent('karaoke-msg', {
+            detail: {
+              type: 'toast',
+              level: 'warn',
+              message: 'Pitch shift unavailable — playing original key',
+            },
+          }))
         }
       })
       .catch((e) => {
@@ -57,6 +71,33 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
       setGraphReady(false)
     }
   }, [])
+
+  // Re-send `source.ready` on every WebSocket (re)connection.
+  //
+  // Why this lives in its own effect:
+  // - useConnection auto-reconnects after a drop (new TCP socket, fresh join cycle).
+  //   The server's close handler clears `sourceReady = false` on the OLD ws, but
+  //   the new ws's join only re-sets `sourceConnected = true` — never `sourceReady`.
+  //   The audio graph (held in a ref) survives the reconnect, so the mount-once
+  //   effect doesn't run again, and without this effect `sourceReady` would
+  //   stay `false` forever, stalling auto-advance and leaving all phones on
+  //   "▌ source offline — playback paused".
+  // - Gate (`createSourceReadyGate`) returns true exactly once per
+  //   (connection × graph-ready) pairing and re-arms whenever `conn.ready`
+  //   drops. Covers all orderings:
+  //     a) graph ready BEFORE ws opens → fires the moment ws opens
+  //     b) ws open BEFORE graph ready → fires the moment graph becomes ready
+  //     c) ws reconnects mid-session  → fires again on the new connection
+  // - Idempotent on the server: replaying `source.ready` on the same socket
+  //   just re-sets `sourceReady = true` and re-broadcasts state. See
+  //   dispatch.ts:93-103.
+  const gateRef = useRef<SourceReadyGate | null>(null)
+  if (gateRef.current === null) gateRef.current = createSourceReadyGate()
+  useEffect(() => {
+    if (gateRef.current!.shouldSend(conn.ready, graphReady)) {
+      connRef.current.send({ type: 'source.ready', msgId: randomUUID() })
+    }
+  }, [conn.ready, graphReady])
 
   // Sync src and pitch with server-driven player state
   useEffect(() => {
@@ -115,5 +156,49 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
     return () => g.video.removeEventListener('ended', onEnded)
   }, [graphReady])
 
-  return <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+  const isPlaying = player && player.status !== 'idle'
+  const queueLen = conn.state?.queue.length ?? 0
+  const sourceConnected = conn.state?.sourceConnected ?? false
+  const sourceReady = conn.state?.sourceReady ?? false
+  // §3.3a: source-offline with queued items renders the dedicated offline panel
+  // INSIDE the video frame (replacing the splash). Idle with no queue still
+  // shows the regular splash even when offline — there's nothing to be lost.
+  const showOfflinePanel = !isPlaying && queueLen > 0 && (!sourceConnected || !sourceReady)
+  // §3.3-bis: the transient-recovery "▶ Start next song" button only appears
+  // when the source IS ready (otherwise auto-advance can't fire and the button
+  // would do nothing on tap).
+  const transientWithQueue = queueLen > 0 && sourceConnected && sourceReady
+
+  return (
+    <div
+      className="source-video-frame"
+      style={{
+        position: 'relative', aspectRatio: '16 / 9', width: '100%', maxHeight: '100%',
+        background: 'var(--ink-deep)', border: '1.5px solid var(--cigarette)', overflow: 'hidden',
+      }}
+    >
+      <div ref={mountRef} style={{ position: 'absolute', inset: 0 }} />
+      {isPlaying ? (
+        <>
+          <div
+            className="live-badge uc"
+            data-status={player.status}
+            style={{
+              position: 'absolute', top: 8, left: 8, padding: '2px 6px',
+              background: 'rgba(10, 8, 8, 0.7)', color: 'var(--riso-pink)',
+              letterSpacing: '0.16em', borderRadius: 2, pointerEvents: 'none',
+              // font-size enforced by .live-badge cascade (12 desktop, 13 phones).
+            }}
+          >
+            ▌ LIVE 出演中
+          </div>
+          <NowPlayingStrip conn={conn} player={player} />
+        </>
+      ) : showOfflinePanel ? (
+        <SourceOfflineState />
+      ) : (
+        <IdleSplash conn={conn} transientWithQueue={transientWithQueue} />
+      )}
+    </div>
+  )
 }

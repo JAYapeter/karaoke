@@ -7,9 +7,6 @@ import { KeyboardShortcuts } from '@/components/source/KeyboardShortcuts'
 import { Toaster } from '@/components/shared/Toaster'
 import { useConnection } from '@/lib/client/ws'
 
-// Mirror of the server-side loopback check. Source authority is granted server-side
-// based on `req.socket.remoteAddress`; this is just a UX guard so people who type
-// the LAN URL into a phone don't see a half-broken /source.
 const isLocalhostOrigin = () => {
   if (typeof window === 'undefined') return false
   const h = window.location.hostname
@@ -26,9 +23,9 @@ export default function Source() {
   if (local === null) return null
   if (!local) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div className="page-root" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div className="paper-card paper-grain" style={{ maxWidth: 420 }}>
-          <div className="uc" style={{ fontSize: 10, color: 'var(--ink-muted)' }}>▌ wrong device</div>
+          <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>▌ wrong device</div>
           <h2 style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 22, margin: '8px 0 12px' }}>
             Open this page on the host machine.
           </h2>
@@ -41,12 +38,19 @@ export default function Source() {
   }
   if (!unlocked) return <StartShowGesture onClick={() => setUnlocked(true)} />
 
+  // The .source-root grid (defined in riso.css) owns all four safe-area insets,
+  // 100dvh sizing, and the desktop video-left + rail-right layout (single column on ≤720px).
   return (
-    <main style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: 'var(--ink-black)' }}>
-      <VideoPlayer conn={conn} />
-      <QueueOverlay conn={conn} />
-      <KeyboardShortcuts conn={conn} />
-      <Toaster />
-    </main>
+    <Toaster>
+      <main className="source-root" aria-label="Karaoke source display">
+        <section className="source-root__video" aria-label="Now playing" style={{ position: 'relative' }}>
+          <VideoPlayer conn={conn} />
+        </section>
+        <aside className="source-root__rail" aria-label="Setlist and join controls">
+          <QueueOverlay conn={conn} />
+        </aside>
+        <KeyboardShortcuts conn={conn} />
+      </main>
+    </Toaster>
   )
 }

@@ -25,7 +25,6 @@ export type Connection = {
   state: ServerState | null
   send: (msg: ClientMessage) => void
   ready: boolean
-  ack: (msgId: string) => Promise<{ ok: boolean; error?: string }>
 }
 
 export const useConnection = (opts: {
@@ -35,13 +34,13 @@ export const useConnection = (opts: {
   const [state, setState] = useState<ServerState | null>(null)
   const [ready, setReady] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
-  const ackResolversRef = useRef<Map<string, (v: { ok: boolean; error?: string }) => void>>(new Map())
   const onMessage = opts.onMessage
   const sessionId = useMemo(() => getSessionId(), [])
 
   useEffect(() => {
     let alive = true
     let attempt = 0
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
     const connect = () => {
       const ws = new WebSocket(`ws://${location.host}/ws?sessionId=${sessionId}`)
@@ -62,10 +61,6 @@ export const useConnection = (opts: {
         else if (msg.type === 'state.queue' || msg.type === 'state.player') {
           setState((s) => s && applyDelta(s, msg))
         }
-        else if (msg.type === 'state.ack') {
-          const r = ackResolversRef.current.get(msg.msgId)
-          if (r) { r({ ok: msg.ok, ...(msg.error ? { error: msg.error } : {}) }); ackResolversRef.current.delete(msg.msgId) }
-        }
         onMessage?.(msg)
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new CustomEvent('karaoke-msg', { detail: msg }))
@@ -76,13 +71,16 @@ export const useConnection = (opts: {
         if (!alive) return
         const delay = Math.min(2000 + attempt * 500, 8000)
         attempt++
-        setTimeout(connect, delay)
+        reconnectTimer = setTimeout(connect, delay)
       })
     }
     connect()
 
     return () => {
       alive = false
+      // Round-1 #12: reconnect-timer cleanup. Without this, an unmount during
+      // the backoff delay would still trigger a (now-orphaned) reconnect.
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null }
       wsRef.current?.close()
     }
   }, [opts.name, sessionId, onMessage])
@@ -91,18 +89,7 @@ export const useConnection = (opts: {
     wsRef.current?.send(JSON.stringify(msg))
   }, [])
 
-  const ack = useCallback((msgId: string) =>
-    new Promise<{ ok: boolean; error?: string }>((resolve) => {
-      ackResolversRef.current.set(msgId, resolve)
-      setTimeout(() => {
-        if (ackResolversRef.current.has(msgId)) {
-          ackResolversRef.current.delete(msgId)
-          resolve({ ok: false, error: 'timeout' })
-        }
-      }, 6000)
-    }), [])
-
-  return { state, send, ready, ack }
+  return { state, send, ready }
 }
 
 const applyDelta = (s: ServerState, msg: ServerMessage): ServerState => {

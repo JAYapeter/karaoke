@@ -8,12 +8,104 @@
   --hanko-red:    #c1272d;
   --ink-muted:    #6a4818;
 
-  --display-font: 'Crimson Pro', Georgia, serif;
-  --mono-font: 'JetBrains Mono', 'IBM Plex Mono', ui-monospace, monospace;
+  /* --display-font and --mono-font are intentionally NOT declared here. They
+     are provided by next/font/google in src/app/layout.tsx via the .variable
+     classes applied to <html>, which include metric-adjusted local fallbacks
+     (Crimson Pro Fallback / JetBrains Mono Fallback) with matching
+     ascent-override / descent-override / size-adjust to prevent CLS during
+     font swap. Declaring them at :root in this file would beat the
+     class-defined variables (both selectors have specificity 0,0,1,0, and
+     riso.css loads after the next/font stylesheet), defeating the CLS
+     optimization. Leave them undeclared so next/font's variables win. */
+
+  /* Phone-root sticky-header height. The <Tabs> component overwrites this
+     on mount via ResizeObserver. Default includes safe-area-inset-top so
+     notched-iPhone first paint doesn't under-pad the takeover. */
+  --tabs-height: calc(56px + env(safe-area-inset-top, 0px));
+
+  /* Sum of all currently-mounted top occluders (Tabs + OfflineBanner +
+     PendingAddsTray). The single writer is the useTopOccluderHeight hook in
+     PhoneRoot. Used by the takeover's min-height, sticky search/paste action
+     rows' top offset, and <html>'s scroll-padding-top. */
+  --top-occluder-height: var(--tabs-height);
 }
 
 html, body { background: var(--ink-black); color: var(--paper-cream); }
 
+/* §5.4 single scroll owner. <html> is the only scroll container; body and
+   .phone-root expand naturally. */
+html {
+  overflow-y: auto;
+  scroll-padding-top: var(--top-occluder-height);
+  scroll-padding-bottom: 96px;
+}
+body, .phone-root { overflow: visible; }
+html, body { overscroll-behavior: contain; }
+
+/* §4 modal scroll-lock. */
+html.modal-open-lock { overflow: hidden; }
+html.modal-open-lock body { overflow: hidden; }
+
+/* §5.4: touch-action: manipulation on actual interactive controls only.
+   NOT on generic div/li — applying it to non-controls causes iOS long-press
+   quirks. */
+button, input, textarea, select, a, [role="button"] {
+  touch-action: manipulation;
+}
+
+/* §5.4 anti-zoom: form input text ≥16 CSS px. */
+input, textarea, select { font-size: 16px; }
+
+/* §5.4 focus-visible ring. */
+:where(button, [role="button"], a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--hanko-red);
+  outline-offset: 2px;
+}
+
+/* §5.4 / §5.6 viewport units. vh first, dvh second. Every page-root class
+   declared in the spec, kept as the spec writes it so the source-of-truth
+   selector list stays implementable verbatim. The components in this plan
+   never render `.source-offline` / `.source-idle-splash` as page roots —
+   they use the `--overlay` modifier classes (defined below) when rendered
+   inside the `.source-root` video frame, so the page-root rules don't fire
+   in that case. `.token-entry` is absent — TokenEntry was removed in
+   commit 52e037a. */
+.page-root,
+.phone-root,
+.youre-up,
+.start-show-gesture,
+.source-root,
+.source-offline,
+.source-idle-splash,
+.name-entry {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* §5.4 hit-target utility. Touch ≥48 / fine ≥32. Touch breakpoint wins. */
+.hit-target {
+  min-inline-size: 48px;
+  min-block-size: 48px;
+}
+@media (pointer: fine) {
+  .hit-target { min-inline-size: 32px; min-block-size: 32px; }
+}
+@media (max-width: 720px) {
+  .hit-target { min-inline-size: 48px; min-block-size: 48px; }
+}
+/* Source strip is always touch-friendly (one mode is "walk over and tap"). */
+.now-playing-strip .hit-target {
+  min-inline-size: 48px !important;
+  min-block-size: 48px !important;
+}
+
+/* §5.4 PasteTab textarea — desktop / portrait default. Compact-landscape
+ * override (4em) is declared later in this file so it wins by source order
+ * within an at-rule of equal specificity. Keep this rule OUT of an inline
+ * style on the textarea: the compact-landscape rule must be able to win. */
+.paste-tab__textarea { min-height: 48px; }
+
+/* Visuals — preserved from prior riso.css, ROTATION DROPPED per §5.1. */
 .riso-noise {
   position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background-image:
@@ -21,32 +113,381 @@ html, body { background: var(--ink-black); color: var(--paper-cream); }
     radial-gradient(circle at 80% 70%, rgba(77,255,229,0.18) 0, transparent 35%);
   mix-blend-mode: screen;
 }
-
 .paper-grain {
   background-image: radial-gradient(circle, rgba(0,0,0,0.04) 0.5px, transparent 1px);
   background-size: 3px 3px;
 }
-
-.tape-strip {
-  position: relative;
-}
+.tape-strip { position: relative; }
 .tape-strip::before {
   content: ''; position: absolute; top: -4px; left: 50%; width: 30px; height: 8px;
   background: rgba(212,168,71,0.7); transform: translateX(-50%) rotate(-2deg);
 }
-
 .hanko {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.6em; height: 1.6em; border: 1.5px solid var(--hanko-red);
   color: var(--hanko-red); font-family: var(--display-font); font-weight: 700;
   transform: rotate(-4deg);
 }
-
 .uc { letter-spacing: 0.2em; text-transform: uppercase; font-family: var(--mono-font); }
 
 .paper-card {
   background: var(--paper-cream); color: var(--ink-black);
-  padding: 12px 14px; transform: rotate(-0.5deg);
+  padding: 12px 14px;
   box-shadow: 1px 1px 0 var(--cigarette);
+  /* NO rotation — §5.1. */
 }
-.paper-card:nth-child(2n) { transform: rotate(0.5deg); }
+.paper-card--accent { border-left: 4px solid var(--hanko-red); }
+.paper-card--minor { color: var(--ink-muted); }
+
+/* §5.4 safe-area ownership. Each owner is annotated where it's set.
+   `.tabs` bakes 8px vertical + 12px horizontal breathing room into the
+   safe-area calc so the inline padding on <header> can be omitted —
+   inline `padding` shorthands would otherwise clobber padding-top and
+   strip the env(safe-area-inset-top) the class owns. */
+.tabs {
+  position: sticky;
+  top: 0;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 8px); /* owns safe-area-inset-top */
+  padding-bottom: 8px;
+  padding-left: calc(env(safe-area-inset-left, 0px) + 12px);
+  padding-right: calc(env(safe-area-inset-right, 0px) + 12px);
+}
+.phone-root[data-takeover-mounted="0"] {
+  padding-bottom: env(safe-area-inset-bottom); /* owns safe-area-inset-bottom */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.youre-up {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+.youre-up__controls {
+  /* owns safe-area-inset-bottom. Padding shorthand below bakes 24px vertical
+     + 16px horizontal breathing room INTO the class so consumers don't need
+     to set inline `padding` shorthand (which would override the bottom-inset). */
+  padding: 24px 16px calc(env(safe-area-inset-bottom, 0px) + 24px) 16px;
+}
+/* .source-root padding includes safe-area insets AND 12px breathing room
+   on top/bottom. The later `.source-root` rule below sets `display: grid`
+   etc. — its `padding-block` was previously clobbering these insets, which
+   would let content run under the notch / home indicator. Merging the
+   vertical padding into a single calc() per side keeps the insets owned. */
+.source-root {
+  padding-top: calc(env(safe-area-inset-top) + 12px);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+  padding-left: env(safe-area-inset-left);
+}
+.start-show-gesture,
+.source-offline,
+.source-idle-splash {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+/* .name-entry bakes 24px breathing room into the safe-area shorthand so the
+   component can drop its inline `padding: 24` (which otherwise clobbered the
+   class's safe-area shorthand). */
+.name-entry {
+  padding:
+    calc(env(safe-area-inset-top, 0px) + 24px)
+    calc(env(safe-area-inset-right, 0px) + 24px)
+    calc(env(safe-area-inset-bottom, 0px) + 24px)
+    calc(env(safe-area-inset-left, 0px) + 24px);
+}
+
+/* In-frame overlay modifier — used by IdleSplash and SourceOfflineState when
+   they render INSIDE the .source-root video frame. The base classes above
+   declare page-root behavior (100dvh + safe-area). The overlay modifiers
+   reset that to fill the parent frame instead. Same class names are used
+   in components: <div className="source-idle-splash source-idle-splash--overlay">. */
+.source-idle-splash--overlay,
+.source-offline--overlay {
+  min-height: 0;
+  padding: 0;
+  position: absolute;
+  inset: 0;
+}
+
+/* §3 source grid. Desktop: video + 160px rail. Mobile: stacked.
+   Vertical padding is owned by the rule above (which includes safe-area
+   + 12px breathing room); this rule sets only grid layout. */
+.source-root {
+  display: grid;
+  grid-template-columns: 1fr 160px;
+  gap: 12px;
+}
+.source-root__video { grid-column: 1; }
+.source-root__rail  { grid-column: 2; display: flex; flex-direction: column; gap: 10px; }
+@media (max-width: 720px) {
+  .source-root { grid-template-columns: 1fr; }
+  .source-root__video, .source-root__rail { grid-column: 1; }
+}
+
+/* Setlist panel — desktop-only internal scroll. */
+.setlist-panel { overflow: visible; }
+@media (min-width: 721px) {
+  .setlist-panel {
+    max-height: calc(100dvh - 200px);
+    overflow-y: auto;
+  }
+}
+
+/* §3.6 setlist row action group. */
+.setlist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.setlist-row__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.setlist-row__actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.setlist-row__actions > button {
+  min-inline-size: 32px;
+  min-block-size: 32px;
+}
+@media (max-width: 720px), (pointer: coarse) {
+  .setlist-row__actions { gap: 12px; }
+  .setlist-row__actions > button {
+    min-inline-size: 48px;
+    min-block-size: 48px;
+  }
+}
+
+/* §4.3 search row explicit 56 CSS px. */
+.search-row > button { min-block-size: 56px; }
+
+/* §5.5 LIVE badge pulse. */
+@keyframes live-pulse {
+  0%, 100% { opacity: 1.0; }
+  50%      { opacity: 0.7; }
+}
+.live-badge[data-status="playing"] {
+  animation: live-pulse 1.5s ease-in-out infinite;
+}
+.live-badge[data-status="paused"] { opacity: 0.6; animation: none; }
+.live-badge[data-status="idle"]   { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .live-badge[data-status="playing"] { animation: none; opacity: 1; }
+}
+
+/* §5.5 search row body expand/collapse. Driven by data-expanded on .search-row;
+   --row-content-h is measured by the component. */
+.search-row__body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 200ms ease-out;
+}
+.search-row[data-expanded="1"] .search-row__body {
+  max-height: var(--row-content-h, 9999px);
+}
+.search-row[data-no-measure="1"] .search-row__body { transition: none; }
+.search-row[data-expanded="1"][data-no-measure="1"] .search-row__body { max-height: none; }
+@media (prefers-reduced-motion: reduce) {
+  .search-row__body { transition: none; }
+  .search-row[data-expanded="1"] .search-row__body { max-height: none; }
+}
+
+/* §5.5 YOU'RE UP tap flash + mount. */
+@keyframes tap-flash {
+  0%   { background: transparent; }
+  20%  { background: var(--hanko-red); }
+  100% { background: transparent; }
+}
+.youre-up__btn:active { animation: tap-flash 120ms ease-out; }
+.youre-up { opacity: 0; transition: opacity 150ms ease-out; }
+.youre-up[data-mounted="1"] { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  .youre-up__btn:active { animation: none; }
+  .youre-up { transition: none; opacity: 1; }
+}
+
+/* §5.5 toast mount/dismiss. Reduced-motion keeps the opacity fade (WCAG 2.3.3
+   essential-information carve-out). */
+.toast {
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+.toast[data-visible="1"] { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: opacity 180ms ease-out; transform: none; }
+}
+
+/* §5.3 marquee base. Per-instance duration is set inline via --marquee-duration
+   and --marquee-distance. */
+.marquee {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.marquee[data-overflow="1"] > span {
+  display: inline-block;
+  animation: marquee var(--marquee-duration, 14s) linear infinite;
+}
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  8%   { transform: translateX(0); }
+  92%  { transform: translateX(calc(-1 * var(--marquee-distance, 100%))); }
+  100% { transform: translateX(calc(-1 * var(--marquee-distance, 100%))); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marquee[data-overflow="1"] > span { animation: none; transform: translateX(0); }
+}
+
+/* §3.5 / §5.6 youre-up takeover. Flex column so the controls panel (which
+   sets `margin-top: auto` inline) is pushed to the bottom of the visible
+   takeover area — matches the §4.5 ASCII layout (sub-header / title / spacer
+   / controls + "SOURCE HAS OVERRIDE" footnote). */
+.youre-up {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--top-occluder-height));
+  min-height: calc(100dvh - var(--top-occluder-height));
+}
+.youre-up__readout { touch-action: pan-y; }
+
+/* Desktop defaults for YoureUpView sizing — kept in CSS so the compact
+   landscape media query (max-width:720px, max-height:480px) below can win.
+   Components MUST NOT set inline font-size/min-width/min-height on these
+   classes. */
+.youre-up__title   { font-size: 32px; }
+.youre-up__readout { font-size: 32px; }
+.youre-up__btn     { min-width: 56px; min-height: 56px; font-size: 24px; }
+
+/* §5.4 status-critical labels — class-level floors so inline component
+   fontSize is unnecessary. Desktop: 12px minimum; phones (≤720px): 13px.
+   Components MUST NOT set inline `font-size` on these classes — let the
+   cascade win so the phone bump applies. */
+.live-badge,
+.youre-up__sub-header,
+.offline-banner,
+.now-playing-badge,
+.paused-badge,
+.next-up-badge {
+  font-size: 12px;
+}
+@media (max-width: 720px) {
+  .live-badge,
+  .youre-up__sub-header,
+  .offline-banner,
+  .now-playing-badge,
+  .paused-badge,
+  .next-up-badge {
+    font-size: 13px;
+  }
+}
+/* Overlay variant of .offline-banner (used inside the video frame, where the
+   spec calls for a larger 16px treatment). Class-level rule so the component
+   no longer needs inline font-size — keeping floors out of JSX. */
+.offline-banner--overlay { font-size: 16px; }
+@media (max-width: 720px) {
+  .offline-banner--overlay { font-size: 16px; }
+}
+
+/* §3.5 phone-width source layout.
+   Desktop defaults for .now-playing-strip + __controls live here so the
+   component can drop inline `display`/`alignItems`/`gap`/`padding` —
+   otherwise inline shorthand would clobber the phone overrides below
+   (phone gap: 6px; narrow-phone __controls align-items: stretch). */
+.now-playing-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.now-playing-strip__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+@media (max-width: 720px) {
+  .now-playing-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px;
+  }
+  .now-playing-strip__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .now-playing-strip__controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+  .now-playing-strip__pitch,
+  .now-playing-strip__transport {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  @media (max-width: 390px) {
+    .now-playing-strip__controls { flex-direction: column; align-items: stretch; }
+    .now-playing-strip__pitch,
+    .now-playing-strip__transport { justify-content: space-between; }
+  }
+
+  .setlist-panel__header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .setlist-panel__header .qr-chip {
+    width: 56px;
+    height: 56px;
+    flex: 0 0 56px;
+  }
+  .setlist-panel__header .setlist-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .setlist-panel__header .shuffle-btn { flex: 0 0 auto; }
+  @media (max-width: 360px) {
+    .setlist-panel__header .qr-chip {
+      width: 48px;
+      height: 48px;
+      flex: 0 0 48px;
+    }
+  }
+}
+
+/* Desktop default for QueueView now-playing/next-up title sizing. Kept in
+   CSS so the compact-landscape media query below can win — components
+   MUST NOT set inline `font-size` on .queue-now-playing__title. */
+.queue-now-playing__title { font-size: 18px; }
+
+/* §5.4 compact landscape (height ≤ 480px on phone widths). */
+@media (max-width: 720px) and (max-height: 480px) {
+  .youre-up__title    { font-size: 16px; }
+  .youre-up__readout  { font-size: 24px; }
+  .youre-up__btn      { min-height: 48px; min-width: 48px; }
+  .queue-now-playing__title { font-size: 16px; }
+  .search-row         { padding: 8px 10px; gap: 8px; }
+  .search-row__body   { padding: 8px; gap: 8px; }
+  .paste-tab__textarea { min-height: 4em; }
+
+  .search-tab__query-row,
+  .paste-tab__action-row {
+    position: sticky;
+    top: var(--top-occluder-height, 0);
+    z-index: 1;
+    background: var(--ink-black);
+    padding-block: 6px;
+  }
+}
