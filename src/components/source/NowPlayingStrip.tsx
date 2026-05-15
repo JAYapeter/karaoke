@@ -41,15 +41,18 @@ export const NowPlayingStrip = ({ conn, player }: { conn: Connection; player: Ex
           in riso.css — desktop + phone keep flex+center+gap 8; narrow-phone
           (≤390px) flips to column+stretch. No inline overrides here. */}
       <div className="now-playing-strip__controls">
+        {/* No inline `background` on these buttons — `.icon-btn` class owns
+            transparent at rest so the `:hover` tint can apply (inline
+            `background` would shadow class-defined hover via specificity). */}
         <div className="now-playing-strip__pitch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Lower pitch by one semitone" onClick={() => setLive(player.livePitch - 1)} style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}>−</button>
+          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Lower pitch by one semitone" onClick={() => setLive(player.livePitch - 1)} style={{ color: 'var(--ink-black)', fontSize: 14 }}>−</button>
           <span className="hanko" aria-live="polite" style={{ minWidth: '2.4em', textAlign: 'center' }}>{fmtKey(player.livePitch)}</span>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Raise pitch by one semitone" onClick={() => setLive(player.livePitch + 1)} style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}>+</button>
+          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Raise pitch by one semitone" onClick={() => setLive(player.livePitch + 1)} style={{ color: 'var(--ink-black)', fontSize: 14 }}>+</button>
         </div>
         <div className="now-playing-strip__transport" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Previous song" onClick={prev} style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}>⏮</button>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label={player.status === 'paused' ? 'Play' : 'Pause'} onClick={togglePause} style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}>{player.status === 'paused' ? '▶' : '⏸'}</button>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Skip" onClick={skip} style={{ background: 'transparent', color: 'var(--ink-black)', fontSize: 14 }}>⏭</button>
+          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Previous song" onClick={prev} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏮</button>
+          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label={player.status === 'paused' ? 'Play' : 'Pause'} onClick={togglePause} style={{ color: 'var(--ink-black)', fontSize: 14 }}>{player.status === 'paused' ? '▶' : '⏸'}</button>
+          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Skip" onClick={skip} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏭</button>
         </div>
       </div>
     </div>

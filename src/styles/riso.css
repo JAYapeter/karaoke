@@ -99,10 +99,16 @@ input, textarea, select { font-size: 16px; }
   min-block-size: 48px !important;
 }
 
-/* §5 affordance utility — applies to interactive icon-glyph buttons. */
+/* §5 affordance utility — applies to interactive icon-glyph buttons.
+ * `background: transparent` lives on the BASE class so the user-agent <button>
+ * default (light gray) doesn't show through, AND so consumers don't need an
+ * inline `background: transparent` (which would shadow the :hover rule below
+ * since inline styles outrank class selectors). The `.qr-chip` rule below
+ * overrides this with the cream background it needs. */
 .icon-btn {
   cursor: pointer;
   border-radius: 2px;
+  background: transparent;
   transition: background-color 150ms ease-out;
 }
 /* Default tint — for buttons sitting on the cream `.paper-card` surface. */
@@ -130,6 +136,16 @@ input, textarea, select { font-size: 16px; }
 @media (prefers-reduced-motion: reduce) {
   .icon-btn { transition: none; }
   .icon-btn:active { animation: none; }
+}
+
+/* QR chip — opaque cream background must sit OVER the `.icon-btn` transparent
+ * base so the QR image isn't backed by the dark video-frame surface. Kept in
+ * CSS (not inline) so the `:hover` and disabled-state rules above can win
+ * via the cascade — an inline `background` would shadow them. The `.icon-btn`
+ * class still composes its hover tint on top via `background-color`, which
+ * targets the longhand only and leaves `background-image` / cream alone. */
+.qr-chip {
+  background: var(--paper-cream);
 }
 
 /* §5.4 PasteTab textarea — desktop / portrait default. Compact-landscape
