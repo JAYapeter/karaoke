@@ -40,7 +40,10 @@ export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPan
     return (
       <button
         type="button"
-        className="qr-chip hit-target icon-btn icon-btn--on-dark"
+        // Default `.icon-btn` (dark-on-cream hover tint) — NOT `--on-dark`,
+        // because the chip's surface is cream (`.qr-chip`); the `--on-dark`
+        // tint is cream-on-cream and effectively invisible against the chip.
+        className="qr-chip hit-target icon-btn"
         aria-label="Show join URL"
         onClick={onOpenJoinModal}
         // No inline `background` — the `.qr-chip` class in riso.css owns the
