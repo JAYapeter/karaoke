@@ -1,19 +1,10 @@
 'use client'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import qrcode from 'qrcode'
-import { deriveJoinHost } from '@/lib/client/derive-join-host'
+import { useJoinUrl } from '@/lib/client/use-join-url'
 
 export type JoinUrlModalProps = { open: boolean; onClose: () => void; serverHost: string | null }
 
-const useJoinUrl = (serverHost: string | null) => {
-  const [url, setUrl] = useState<string>('')
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const host = deriveJoinHost(serverHost, window.location.host)
-    setUrl(`${window.location.protocol}//${host}/`)
-  }, [serverHost])
-  return url
-}
 const useScrollLock = (locked: boolean) => {
   useEffect(() => {
     if (!locked || typeof document === 'undefined') return
@@ -150,6 +141,7 @@ export const JoinUrlModal = ({ open, onClose, serverHost }: JoinUrlModalProps) =
     if (e.target === dialogRef.current) stableClose()
   }
   const onCopy = async () => {
+    if (!url) return
     try {
       await navigator.clipboard.writeText(url)
       setCopied(true); setTimeout(() => setCopied(false), 2000)
@@ -169,10 +161,15 @@ export const JoinUrlModal = ({ open, onClose, serverHost }: JoinUrlModalProps) =
       }}
     >
       <div className="uc" style={{ fontSize: 12, letterSpacing: '0.2em' }}>scan to join</div>
-      <div style={{ width: qrPx, height: qrPx, background: 'var(--paper-cream)' }}>
-        {qrDataUrl && <img src={qrDataUrl} alt={`Join URL ${url}`} width={qrPx} height={qrPx} style={{ display: 'block' }} />}
+      {/* `useJoinUrl` returns '' on the source page (loaded as
+          http://localhost:3000) until `state.full` arrives with the LAN host.
+          Render a placeholder until then — phones can't reach localhost. */}
+      <div style={{ width: qrPx, height: qrPx, background: 'var(--paper-cream)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {url
+          ? qrDataUrl && <img src={qrDataUrl} alt={`Join URL ${url}`} width={qrPx} height={qrPx} style={{ display: 'block' }} />
+          : <span className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>connecting…</span>}
       </div>
-      <div className="uc" style={{ fontSize: 13, wordBreak: 'break-all', textAlign: 'center' }}>{url}</div>
+      <div className="uc" style={{ fontSize: 13, wordBreak: 'break-all', textAlign: 'center' }}>{url || 'waiting for LAN host…'}</div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button type="button" className="hit-target uc" onClick={onCopy} style={{ padding: '8px 12px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 12 }}>
           {copied ? 'copied' : 'copy URL'}

@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import qrcode from 'qrcode'
-import { deriveJoinHost } from '@/lib/client/derive-join-host'
+import { useJoinUrl } from '@/lib/client/use-join-url'
 
 type Variant = 'full' | 'chip'
 
@@ -11,15 +11,6 @@ export type QrPanelProps = {
   serverHost: string | null
 }
 
-const useJoinUrl = (serverHost: string | null) => {
-  const [url, setUrl] = useState<string>('')
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    const host = deriveJoinHost(serverHost, window.location.host)
-    setUrl(`${window.location.protocol}//${host}/`)
-  }, [serverHost])
-  return url
-}
 const useQrDataUrl = (url: string, size: number) => {
   const [dataUrl, setDataUrl] = useState<string>('')
   useEffect(() => {
@@ -54,19 +45,29 @@ export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPan
         // can win via the cascade (inline `background` would shadow them).
         style={{ padding: 0, border: '1px solid var(--ink-deep)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
       >
-        {chipDataUrl && <img src={chipDataUrl} alt="" style={{ width: '100%', height: '100%', display: 'block' }} />}
+        {chipDataUrl
+          ? <img src={chipDataUrl} alt="" style={{ width: '100%', height: '100%', display: 'block' }} />
+          : <span className="uc" aria-hidden="true" style={{ fontSize: 10, color: 'var(--ink-muted)' }}>…</span>}
       </button>
     )
   }
 
+  // Initial-paint race: on the source page (loaded as http://localhost:3000),
+  // `useJoinUrl` returns '' until `state.full` arrives with the LAN host.
+  // Show a "connecting..." placeholder instead of encoding localhost into a
+  // QR phones can't reach.
+  const ready = url.length > 0
+
   return (
     <div className="paper-card paper-grain" style={{ textAlign: 'center' }}>
       <div className="uc" style={{ fontSize: 12, letterSpacing: '0.2em', color: 'var(--ink-muted)' }}>scan to join</div>
-      <div style={{ margin: '6px auto', width: 110, height: 110, background: 'var(--paper-cream)' }}>
-        {fullDataUrl && <img src={fullDataUrl} alt={`Join URL ${url}`} width={110} height={110} style={{ display: 'block' }} />}
+      <div style={{ margin: '6px auto', width: 110, height: 110, background: 'var(--paper-cream)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {ready
+          ? fullDataUrl && <img src={fullDataUrl} alt={`Join URL ${url}`} width={110} height={110} style={{ display: 'block' }} />
+          : <span className="uc" style={{ fontSize: 10, color: 'var(--ink-muted)' }}>connecting…</span>}
       </div>
       <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)', wordBreak: 'break-all' }}>
-        {url.replace(/^https?:\/\//, '')}
+        {ready ? url.replace(/^https?:\/\//, '') : 'waiting for LAN host…'}
       </div>
     </div>
   )
