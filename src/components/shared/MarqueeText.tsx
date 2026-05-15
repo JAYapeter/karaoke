@@ -16,7 +16,14 @@ export const MarqueeText = ({ text, className }: { text: string; className?: str
     const c = containerRef.current
     const i = innerRef.current
     if (!c || !i) return
-    const sw = i.scrollWidth
+    // Measure the container's scrollWidth, not the inner <span>'s. The span
+    // is `display: inline` until overflow flips data-overflow to "1", and
+    // `scrollWidth` on inline elements is browser-quirky (frequently returns
+    // 0 or the line-box width rather than the rendered content extent). The
+    // container is a block-level div with `overflow: hidden`, so its
+    // scrollWidth reliably reports the full content width of its nowrap
+    // child — exactly what §3.6 says drives the marquee trigger.
+    const sw = c.scrollWidth
     const cw = c.clientWidth
     const o = shouldMarquee(sw, cw)
     setOverflow(o)
