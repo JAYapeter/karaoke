@@ -9,6 +9,7 @@ export class Store {
   private player: PlayerState = { status: 'idle', epoch: 0 }
   private sourceConnected = false
   private sourceReady = false
+  private serverHost: string | null = null
   private listeners = new Set<Listener>()
 
   constructor(private readonly sourceToken: string) {}
@@ -34,6 +35,7 @@ export class Store {
       player: this.player,
       sourceConnected: this.sourceConnected,
       sourceReady: this.sourceReady,
+      serverHost: this.serverHost,
     }
   }
 
@@ -53,6 +55,7 @@ export class Store {
   setPlayer(p: PlayerState) { this.player = p; this.emit() }
   setSourceConnected(b: boolean) { this.sourceConnected = b; this.emit() }
   setSourceReady(b: boolean) { this.sourceReady = b; this.emit() }
+  setServerHost(host: string | null) { this.serverHost = host; this.emit() }
 
   // Read-only accessors
   getQueue(): readonly QueueItem[] { return this.queue }

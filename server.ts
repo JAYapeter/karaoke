@@ -55,14 +55,17 @@ const ioFor = (c: ClientCtx): IO => ({
 
 const dispatcherFor = (c: ClientCtx) => new Dispatcher(store, ioFor(c), idem)
 
-const lanIp = (): string => {
+// Returns the first non-internal IPv4 address, or null if only loopback is
+// available. Banner falls back to '127.0.0.1' for display; serverHost stays
+// null so the source page falls back to window.location.host.
+const lanIp = (): string | null => {
   const ifs = os.networkInterfaces()
   for (const name of Object.keys(ifs)) {
     for (const i of ifs[name] ?? []) {
       if (i.family === 'IPv4' && !i.internal) return i.address
     }
   }
-  return '127.0.0.1'
+  return null
 }
 
 const checkYtDlp = async () => {
@@ -75,7 +78,7 @@ const checkYtDlp = async () => {
 }
 
 const printBanner = async () => {
-  const url = `http://${lanIp()}:${PORT}`
+  const url = `http://${lanIp() ?? '127.0.0.1'}:${PORT}`
   const qr = await qrcode.toString(url, { type: 'terminal', small: true })
   console.log('')
   console.log('  Karaoke server running')
@@ -85,6 +88,17 @@ const printBanner = async () => {
 }
 
 app.prepare().then(() => {
+  // Resolve the host phones should hit (for the source-page QR). Env override
+  // wins verbatim (no port suffix appended); otherwise reuse the same LAN-IP
+  // picker that produces the boot banner. Loopback-only → null, so the client
+  // falls back to window.location.host.
+  const overrideHost = process.env.KARAOKE_LAN_HOST?.trim()
+  const ip = lanIp()
+  const resolvedHost = overrideHost && overrideHost.length > 0
+    ? overrideHost
+    : ip ? `${ip}:${PORT}` : null
+  store.setServerHost(resolvedHost)
+
   const server = createServer((req, res) => handle(req, res, parse(req.url ?? '/', true)))
   // noServer: we manually route upgrades so Turbopack HMR (/_next/webpack-hmr)
   // can pass through to Next's own upgrade handler.
