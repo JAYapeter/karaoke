@@ -41,8 +41,8 @@ export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPan
         aria-label="Show join URL"
         onClick={onOpenJoinModal}
         // No inline `background` — the `.qr-chip` class in riso.css owns the
-        // cream background so `:hover` and disabled-state rules from `.icon-btn`
-        // can win via the cascade (inline `background` would shadow them).
+        // cream background so any future `:hover` / state rules can win via
+        // the cascade (inline `background` would shadow them).
         style={{ padding: 0, border: '1px solid var(--ink-deep)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
       >
         {chipDataUrl

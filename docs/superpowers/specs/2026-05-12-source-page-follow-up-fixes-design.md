@@ -171,8 +171,8 @@ Add the listed classes alongside (NOT instead of) the existing ones.
 | `server.ts` | Resolve LAN host at boot, call `store.setServerHost` |
 | `src/components/source/QrPanel.tsx` | `useJoinUrl` reads `conn.state?.serverHost`, falls back to `window.location.host` |
 | `src/components/source/SetlistPanel.tsx` | Wrap row title in `MarqueeText`; add `.icon-btn` to ⤴/×/🔀 buttons |
-| `src/components/source/NowPlayingStrip.tsx` | Add `.icon-btn .icon-btn--on-dark` to transport + pitch buttons |
-| `src/components/source/QrPanel.tsx` | Add `.icon-btn` to chip variant button (apply `--on-dark` if it sits on dark surface) |
+| `src/components/source/NowPlayingStrip.tsx` | Add `.icon-btn` to transport + pitch buttons (cream `.paper-card` surface — no `--on-dark` modifier) |
+| `src/components/source/QrPanel.tsx` | Add `.icon-btn` to chip variant button (cursor + tap-flash); hover/focus affordance is painted via `outline` on `.qr-chip` since the QR `<img>` occludes any background tint |
 | `src/styles/riso.css` | Change `.source-root` columns to `1fr 240px`; add `.icon-btn` + `.icon-btn--on-dark` rules + reduced-motion override |
 | `tests/unit/use-join-url.test.ts` (new) | Test `useJoinUrl` derivation: env-set serverHost wins, null falls back to window.location.host |
 | `README.md` | Document `KARAOKE_LAN_HOST` env override |
