@@ -53,7 +53,15 @@ export const JoinUrlModal = ({ open, onClose, serverHost }: JoinUrlModalProps) =
 
   useEffect(() => {
     if (!url) return
-    qrcode.toDataURL(url, { margin: 1, width: qrPx * 1.5 }).then(setQrDataUrl).catch(() => setQrDataUrl(''))
+    // Cancel late promises so rapid url/qrPx changes (e.g. orientation
+    // flip toggling compact landscape) can't overwrite a fresh data URL
+    // with a stale one, and so unmounting mid-encode doesn't pin the
+    // resolved buffer in memory (StrictMode doubles the in-flight count).
+    let cancelled = false
+    qrcode.toDataURL(url, { margin: 1, width: qrPx * 1.5 })
+      .then((d) => { if (!cancelled) setQrDataUrl(d) })
+      .catch(() => { if (!cancelled) setQrDataUrl('') })
+    return () => { cancelled = true }
   }, [url, qrPx])
   useScrollLock(open)
   useEffect(() => {

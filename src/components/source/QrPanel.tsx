@@ -17,7 +17,15 @@ const useQrDataUrl = (url: string, size: number) => {
   const [dataUrl, setDataUrl] = useState<string>('')
   useEffect(() => {
     if (!url) return
-    qrcode.toDataURL(url, { margin: 1, width: size }).then(setDataUrl).catch(() => setDataUrl(''))
+    // Cancel late promises so rapid url/size changes can't overwrite a
+    // fresh data URL with a stale one, and so unmounting mid-encode
+    // doesn't pin the resolved buffer in memory (StrictMode doubles the
+    // in-flight count, so this matters even in dev).
+    let cancelled = false
+    qrcode.toDataURL(url, { margin: 1, width: size })
+      .then((d) => { if (!cancelled) setDataUrl(d) })
+      .catch(() => { if (!cancelled) setDataUrl('') })
+    return () => { cancelled = true }
   }, [url, size])
   return dataUrl
 }
