@@ -308,9 +308,16 @@ input, textarea, select { font-size: 16px; }
   display: flex;
   align-items: center;
   gap: 8px;
+  min-block-size: 32px;
+}
+@media (max-width: 720px), (pointer: coarse) {
+  .setlist-row { min-block-size: 48px; }
 }
 /* Flex slot inside .setlist-row that holds the row index/name prefix and the
-   marquee'd title. min-width:0 lets the marquee child shrink so its overflow
+   marquee'd title. Rendered as a <button> so tapping the row toggles which
+   row's actions are visible — `aria-expanded` reflects state. Button-default
+   styles (UA background, border, padding, font, text-align) are reset so the
+   row reads as text. min-width:0 lets the marquee child shrink so its overflow
    detection works. */
 .setlist-row__title-wrap {
   flex: 1 1 auto;
@@ -318,6 +325,14 @@ input, textarea, select { font-size: 16px; }
   display: flex;
   align-items: baseline;
   gap: 8px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .setlist-row__index { flex: 0 0 auto; }
 /* The row title text (rendered by MarqueeText). MarqueeText forwards

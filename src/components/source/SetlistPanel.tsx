@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { randomUUID } from '@/lib/client/uuid'
 import { getSessionId } from '@/lib/client/ws'
 import type { Connection } from '@/lib/client/ws'
@@ -21,6 +21,10 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
   const { showToast } = useToaster()
   const visible = queue.slice(0, VISIBLE_CAP)
   const more = Math.max(0, queue.length - VISIBLE_CAP)
+  // Selection persists per item id, but is derived on render — if the selected
+  // row drops out of the visible window (removed, played, pushed past the cap),
+  // no row matches and the action group stays hidden until the user taps again.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // Each remove-undo registers a `karaoke-msg` listener + 4 s setTimeout. If
   // the component unmounts before either fires, both leak. Track every live
@@ -35,6 +39,7 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
 
   const remove = (item: QueueItem) => {
     const originalIndex = queue.findIndex((q) => q.id === item.id)
+    setSelectedId(null)
     conn.send({ type: 'queue.remove', msgId: randomUUID(), itemId: item.id })
     // §3.6 undo: re-add via queue.add and, when the re-added item appears in
     // the queue snapshot, chain a queue.move to the original index. Since
@@ -98,6 +103,7 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
 
   const moveTop = (item: QueueItem) => {
     const originalIndex = queue.findIndex((q) => q.id === item.id)
+    setSelectedId(null)
     conn.send({ type: 'queue.move', msgId: randomUUID(), itemId: item.id, toIndex: 0 })
     showToast({
       level: 'info', message: `Moved ${item.title} to top`, ttlMs: UNDO_TTL_MS,
@@ -129,21 +135,32 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
           queue something to start the show
         </div>
       )}
-      {visible.map((it, i) => (
-        <div key={it.id} className={`setlist-row ${i > 0 ? 'paper-card--minor' : ''}`} style={{ padding: '4px 0' }}>
-          <div className="setlist-row__title-wrap">
-            <span className="uc setlist-row__index" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
-              {String(i + 2).padStart(2, '0')} · {it.queuedBy.name.toUpperCase()}
-            </span>
-            <MarqueeText text={it.title} className="setlist-row__title" />
+      {visible.map((it, i) => {
+        const isSelected = selectedId === it.id
+        return (
+          <div key={it.id} className={`setlist-row ${i > 0 ? 'paper-card--minor' : ''}`} data-selected={isSelected ? '1' : '0'} style={{ padding: '4px 0' }}>
+            <button
+              type="button"
+              className="setlist-row__title-wrap"
+              aria-expanded={isSelected}
+              aria-label={`Queue item: ${it.title}. ${isSelected ? 'Actions visible.' : 'Tap to show actions.'}`}
+              onClick={() => setSelectedId(isSelected ? null : it.id)}
+            >
+              <span className="uc setlist-row__index" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
+                {String(i + 2).padStart(2, '0')} · {it.queuedBy.name.toUpperCase()}
+              </span>
+              <MarqueeText text={it.title} className="setlist-row__title" />
+            </button>
+            {isSelected && (
+              <div className="setlist-row__actions">
+                {/* No inline `background` — `.icon-btn` class owns transparent at rest. */}
+                <button type="button" aria-label="Move to top" onClick={() => moveTop(it)} className="uc icon-btn" style={{ color: 'var(--ink-black)', fontSize: 12 }}>⤴</button>
+                <button type="button" aria-label="Remove from queue" onClick={() => remove(it)} className="uc icon-btn" style={{ color: 'var(--hanko-red)', fontSize: 12 }}>✕</button>
+              </div>
+            )}
           </div>
-          <div className="setlist-row__actions">
-            {/* No inline `background` — `.icon-btn` class owns transparent at rest. */}
-            <button type="button" aria-label="Move to top" onClick={() => moveTop(it)} className="uc icon-btn" style={{ color: 'var(--ink-black)', fontSize: 12 }}>⤴</button>
-            <button type="button" aria-label="Remove from queue" onClick={() => remove(it)} className="uc icon-btn" style={{ color: 'var(--hanko-red)', fontSize: 12 }}>✕</button>
-          </div>
-        </div>
-      ))}
+        )
+      })}
       {more > 0 && (
         <div className="uc" style={{ textAlign: 'center', padding: '6px 0', fontSize: 12, color: 'var(--ink-muted)' }}>
           + {more} more
