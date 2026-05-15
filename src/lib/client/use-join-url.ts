@@ -5,16 +5,29 @@ import { deriveJoinHost } from '@/lib/client/derive-join-host'
 /**
  * Shared helper hook for QR / join-URL composition (used by QrPanel and
  * JoinUrlModal). Returns the URL string a phone should hit to join, or `''`
- * during the initial-paint race when:
+ * when both of the following are true:
  *   1. The page is loaded on a non-LAN-reachable host (localhost / 127.* /
  *      ::1) — this is true for the source page, which is gated to
  *      http://localhost:3000 by the source-trust guard.
- *   2. The server-detected LAN host (`serverHost` from `state.full`) hasn't
- *      arrived over the WS yet (~50–500ms after first render).
+ *   2. The server-detected LAN host (`serverHost` from `state.full`) is
+ *      `null`.
  *
- * Without this gate, the QR would briefly encode `localhost:3000` and any
- * phone scanning during that window would get a useless URL. We return `''`
- * so consumers can render a "connecting..." placeholder instead.
+ * Without this gate, the QR would encode `localhost:3000` and any phone
+ * scanning would get a useless URL. We return `''` so consumers can render
+ * a "connecting..." placeholder instead.
+ *
+ * Two regimes:
+ *   - **WS-handshake race (transient):** `serverHost` is null for ~50–500
+ *     ms while the WS connects, then `state.full` arrives with the LAN
+ *     host and the effect re-runs. Placeholder swaps to the real QR.
+ *   - **Loopback-only host (persistent, by design — spec §3.4):** if the
+ *     server resolved no LAN IPv4 (Wi-Fi off, airplane mode, no IPv4
+ *     lease) AND no `KARAOKE_LAN_HOST` env override is set, `serverHost`
+ *     stays `null` and the placeholder stays visible indefinitely.
+ *     Encoding `localhost:3000` would only mislead — phones cannot reach
+ *     the host in this state regardless of what the QR says. Operators
+ *     should set `KARAOKE_LAN_HOST` or bring up a LAN interface and
+ *     restart the server.
  *
  * Phone clients (loaded on the LAN URL itself) skip the gate: their
  * `window.location.host` is already a LAN-reachable host, so the hook
