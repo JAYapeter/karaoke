@@ -140,16 +140,20 @@ input, textarea, select { font-size: 16px; }
  * CSS (not inline) so the `:hover` and disabled-state rules above can win
  * via the cascade — an inline `background` would shadow them.
  *
- * Affordance is OUTLINE-BASED on hover, not background-based: the chip's
- * <img> child fills the entire button (width:100%/height:100%) so any
- * `:hover` background-color tint inherited from `.icon-btn` is occluded by
- * the QR image. Painting the outline outside the box keeps the affordance
- * visible. `.icon-btn` is still applied to the chip for cursor + tap-flash
- * + reduced-motion override; its hover tint becomes harmless dead behavior.
+ * Affordance is OUTLINE-BASED on hover/focus, not background-based: the
+ * chip's <img> child fills the entire button (width:100%/height:100%) so
+ * any `:hover` background-color tint inherited from `.icon-btn` is occluded
+ * by the QR image. Painting the outline outside the box keeps the
+ * affordance visible. `.icon-btn` is still applied to the chip for cursor
+ * + tap-flash + reduced-motion override; its hover tint becomes harmless
+ * dead behavior.
  *
- * NOTE: keyboard-focus styling is intentionally left to the global
- * `:focus-visible` rule above (red hanko-red ring). We override only the
- * pointer-hover state here so we don't disturb the brand focus ring. */
+ * NOTE on keyboard focus: the base rule reserves a 2px transparent outline
+ * so :hover and :focus-visible only need to swap the color (no layout
+ * shift, no transition jump). The global `:where(button):focus-visible`
+ * rule (red hanko-red ring) ties on specificity (both 0,1,0) but loses on
+ * source order to `.qr-chip`'s transparent outline — so we explicitly
+ * restore the brand red ring on `.qr-chip:focus-visible` here. */
 .qr-chip {
   background: var(--paper-cream);
   transition: outline-color 150ms ease-out;
@@ -158,6 +162,9 @@ input, textarea, select { font-size: 16px; }
 }
 .qr-chip:hover {
   outline-color: var(--ink-deep);
+}
+.qr-chip:focus-visible {
+  outline-color: var(--hanko-red);
 }
 @media (prefers-reduced-motion: reduce) {
   .qr-chip { transition: none; }
