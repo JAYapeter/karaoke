@@ -9,6 +9,8 @@ export type QrPanelProps = {
   variant?: Variant
   onOpenJoinModal?: () => void
   serverHost: string | null
+  /** Chip-variant only: drives `aria-expanded` so SR users hear the popup state. */
+  joinModalOpen?: boolean
 }
 
 const useQrDataUrl = (url: string, size: number) => {
@@ -20,7 +22,7 @@ const useQrDataUrl = (url: string, size: number) => {
   return dataUrl
 }
 
-export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPanelProps) => {
+export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost, joinModalOpen }: QrPanelProps) => {
   const url = useJoinUrl(serverHost)
   // Gate the unused variant's hook so we only encode one QR at a time. The
   // hook bails when url is empty, so passing '' skips the qrcode work.
@@ -39,6 +41,8 @@ export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPan
         // background-color hover rule is harmless dead behavior here.
         className="qr-chip hit-target icon-btn"
         aria-label="Show join URL"
+        aria-haspopup="dialog"
+        aria-expanded={joinModalOpen ?? false}
         onClick={onOpenJoinModal}
         // No inline `background` — the `.qr-chip` class in riso.css owns the
         // cream background so any future `:hover` / state rules can win via

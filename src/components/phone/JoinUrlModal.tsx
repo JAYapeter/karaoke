@@ -183,7 +183,7 @@ export const JoinUrlModal = ({ open, onClose, serverHost }: JoinUrlModalProps) =
 
   if (supportsDialog()) {
     return (
-      <dialog ref={dialogRef} onClick={onBackdropTap} style={{ padding: 0, border: 'none', background: 'transparent', color: 'inherit' }}>
+      <dialog ref={dialogRef} aria-label="Join URL" onClick={onBackdropTap} style={{ padding: 0, border: 'none', background: 'transparent', color: 'inherit' }}>
         {Body}
       </dialog>
     )
