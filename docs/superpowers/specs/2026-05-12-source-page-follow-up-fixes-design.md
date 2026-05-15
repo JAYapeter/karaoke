@@ -125,17 +125,8 @@ The redesign spec specified semantic class names (`.hit-target`, `.uc`) that own
 .icon-btn:active {
   animation: tap-flash 150ms ease-out;
 }
-/* Disabled / aria-disabled buttons should not show clickable affordance. */
-.icon-btn[disabled],
-.icon-btn[aria-disabled="true"] {
-  cursor: not-allowed;
-}
-.icon-btn[disabled]:hover,
-.icon-btn[aria-disabled="true"]:hover,
-.icon-btn--on-dark[disabled]:hover,
-.icon-btn--on-dark[aria-disabled="true"]:hover {
-  background-color: transparent;
-}
+/* No disabled-state rules: every current `.icon-btn` consumer is always
+   enabled. Add rules back when an actual disabled consumer appears. */
 @media (prefers-reduced-motion: reduce) {
   .icon-btn { transition: none; }
   .icon-btn:active { animation: none; }
@@ -160,7 +151,7 @@ Add the listed classes alongside (NOT instead of) the existing ones.
 ### §5.4 Edge cases & contracts
 - **Hover background contrast.** `.icon-btn:hover` (default tint, `rgba(10, 8, 8, 0.08)`) is visible on cream `var(--paper-cream)` but invisible on dark `var(--ink-black)`. Buttons on dark surfaces must additionally carry the `.icon-btn--on-dark` modifier. The application table in §5.3 specifies which buttons need it: all source-rail buttons in this round (NowPlayingStrip pitch + transport, SetlistPanel ⤴/×/🔀, QrPanel chip) sit on cream surfaces (`.paper-card` or `.qr-chip`'s own cream backing) and use the DEFAULT `.icon-btn`. The `--on-dark` modifier is reserved for any future buttons placed directly on a dark `var(--ink-black)` surface.
 - **Image-occluded backgrounds.** When a button's child fills the entire button (e.g. `.qr-chip` wraps an `<img>` at width:100%/height:100%), the `:hover` background-color tint is occluded and provides no visible affordance. Such buttons must paint their hover affordance via `outline` (which renders outside the box) — see `.qr-chip` in `riso.css` for the established pattern. Keyboard focus is left to the global `:focus-visible` red ring.
-- **Disabled state.** `KeyStepper` and YOU'RE UP buttons aren't on `/source` — out of scope. The transport play/pause toggle is never disabled in current code; no new disabled-state UI needed.
+- **Disabled state.** Deferred. `KeyStepper` and YOU'RE UP buttons aren't on `/source` — out of scope. The transport play/pause toggle is never disabled in current code. No `.icon-btn[disabled]` / `[aria-disabled="true"]` rules ship in this round; add them when an actual disabled consumer appears (and remember to also suppress `:active` tap-flash there).
 - **`:focus-visible`** is already provided by the global `riso.css:53` rule (`outline: 2px solid var(--hanko-red); outline-offset: 2px`). `.icon-btn` does not override it.
 - **Tap-flash conflict.** `tap-flash` keyframe sets background-color via animation. The `transition` on `.icon-btn` would normally compete — but tap-flash uses an explicit color and finishes in 150 ms; the next state (hover or rest) takes over via transition. No flicker observed in the existing `.youre-up__btn` callsite that uses the same pattern.
 

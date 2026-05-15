@@ -122,17 +122,14 @@ input, textarea, select { font-size: 16px; }
 .icon-btn:active {
   animation: tap-flash 150ms ease-out;
 }
-/* Disabled / aria-disabled buttons should not show clickable affordance. */
-.icon-btn[disabled],
-.icon-btn[aria-disabled="true"] {
-  cursor: not-allowed;
-}
-.icon-btn[disabled]:hover,
-.icon-btn[aria-disabled="true"]:hover,
-.icon-btn--on-dark[disabled]:hover,
-.icon-btn--on-dark[aria-disabled="true"]:hover {
-  background-color: transparent;
-}
+/* No disabled-state rules: every current `.icon-btn` consumer (SetlistPanel
+   ⤴/×/🔀, NowPlayingStrip pitch + transport, QrPanel chip) is always
+   enabled — no JSX sets `disabled` or `aria-disabled` on these. The
+   speculative disabled-state rules previously here were dead AND incomplete
+   (didn't suppress tap-flash). Spec §5.4 also notes the disabled state is
+   out of scope for this round. Add rules back when an actual disabled
+   consumer appears. */
+
 @media (prefers-reduced-motion: reduce) {
   .icon-btn { transition: none; }
   .icon-btn:active { animation: none; }
