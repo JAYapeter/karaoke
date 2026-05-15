@@ -208,12 +208,12 @@ input, textarea, select { font-size: 16px; }
   inset: 0;
 }
 
-/* §3 source grid. Desktop: video + 160px rail. Mobile: stacked.
+/* §3 source grid. Desktop: video + 240px rail. Mobile: stacked.
    Vertical padding is owned by the rule above (which includes safe-area
    + 12px breathing room); this rule sets only grid layout. */
 .source-root {
   display: grid;
-  grid-template-columns: 1fr 160px;
+  grid-template-columns: 1fr 240px;
   gap: 12px;
 }
 .source-root__video { grid-column: 1; }
