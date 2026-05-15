@@ -169,12 +169,13 @@ Add the listed classes alongside (NOT instead of) the existing ones.
 | `src/lib/types/state.ts` | Add `serverHost: string \| null` to `ServerState` |
 | `src/lib/server/store.ts` | Add `setServerHost` action |
 | `server.ts` | Resolve LAN host at boot, call `store.setServerHost` |
-| `src/components/source/QrPanel.tsx` | `useJoinUrl` reads `conn.state?.serverHost`, falls back to `window.location.host` |
+| `src/components/source/QrPanel.tsx` | Receives `serverHost` as a prop from the page; `useJoinUrl(serverHost)` derives the join URL via `deriveJoinHost`. On loopback hosts the hook returns `''` until `serverHost` lands (gated placeholder per §3.4); off-loopback it falls back to `window.location.host` immediately |
 | `src/components/source/SetlistPanel.tsx` | Wrap row title in `MarqueeText`; add `.icon-btn` to ⤴/×/🔀 buttons |
 | `src/components/source/NowPlayingStrip.tsx` | Add `.icon-btn` to transport + pitch buttons (cream `.paper-card` surface — no `--on-dark` modifier) |
 | `src/components/source/QrPanel.tsx` | Add `.icon-btn` to chip variant button (cursor + tap-flash); hover/focus affordance is painted via `outline` on `.qr-chip` since the QR `<img>` occludes any background tint |
 | `src/styles/riso.css` | Change `.source-root` columns to `1fr 240px`; add `.icon-btn` + `.icon-btn--on-dark` rules + reduced-motion override |
-| `tests/unit/use-join-url.test.ts` (new) | Test `useJoinUrl` derivation: env-set serverHost wins, null falls back to window.location.host |
+| `tests/unit/use-join-url.test.ts` (new) | Test `isLocalhostFallback` regex: matches `localhost` / `127.x.x.x` / `[::1]` (with/without port); rejects LAN hosts and prefix-match attacks (e.g. `127.0.0.1.evil.com`) |
+| `tests/unit/derive-join-host.test.ts` (new) | Test `deriveJoinHost(serverHost, windowHost)`: non-empty `serverHost` wins; `null` / `undefined` / `''` fall back to `windowHost`; custom DNS hostnames preserved verbatim with or without port |
 | `README.md` | Document `KARAOKE_LAN_HOST` env override |
 
 ## §7 Verification checklist (post-implementation)

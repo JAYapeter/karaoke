@@ -137,8 +137,8 @@ input, textarea, select { font-size: 16px; }
 
 /* QR chip — opaque cream background must sit OVER the `.icon-btn` transparent
  * base so the QR image isn't backed by the dark video-frame surface. Kept in
- * CSS (not inline) so the `:hover` and disabled-state rules above can win
- * via the cascade — an inline `background` would shadow them.
+ * CSS (not inline) so any future `:hover` / state rules from `.icon-btn` can
+ * win via the cascade — an inline `background` would shadow them.
  *
  * Affordance is OUTLINE-BASED on hover/focus, not background-based: the
  * chip's <img> child fills the entire button (width:100%/height:100%) so
