@@ -238,12 +238,28 @@ input, textarea, select { font-size: 16px; }
   align-items: center;
   gap: 8px;
 }
+/* Flex slot inside .setlist-row that holds the row index/name prefix and the
+   marquee'd title. min-width:0 lets the marquee child shrink so its overflow
+   detection works. */
+.setlist-row__title-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.setlist-row__index { flex: 0 0 auto; }
+/* The row title text (rendered by MarqueeText). MarqueeText forwards
+   `className` to its outer container but NOT inline `style`, so the previous
+   inline italic display-font + 14px font-size live here as CSS so the inner
+   `<span>` inherits them. flex:1 1 auto + min-width:0 give the marquee a
+   finite parent width to detect overflow against. */
 .setlist-row__title {
   flex: 1 1 auto;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-family: var(--display-font);
+  font-style: italic;
+  font-size: 14px;
 }
 .setlist-row__actions {
   flex: 0 0 auto;
