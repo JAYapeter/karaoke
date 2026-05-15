@@ -141,11 +141,29 @@ input, textarea, select { font-size: 16px; }
 /* QR chip — opaque cream background must sit OVER the `.icon-btn` transparent
  * base so the QR image isn't backed by the dark video-frame surface. Kept in
  * CSS (not inline) so the `:hover` and disabled-state rules above can win
- * via the cascade — an inline `background` would shadow them. The `.icon-btn`
- * class still composes its hover tint on top via `background-color`, which
- * targets the longhand only and leaves `background-image` / cream alone. */
+ * via the cascade — an inline `background` would shadow them.
+ *
+ * Affordance is OUTLINE-BASED on hover, not background-based: the chip's
+ * <img> child fills the entire button (width:100%/height:100%) so any
+ * `:hover` background-color tint inherited from `.icon-btn` is occluded by
+ * the QR image. Painting the outline outside the box keeps the affordance
+ * visible. `.icon-btn` is still applied to the chip for cursor + tap-flash
+ * + reduced-motion override; its hover tint becomes harmless dead behavior.
+ *
+ * NOTE: keyboard-focus styling is intentionally left to the global
+ * `:focus-visible` rule above (red hanko-red ring). We override only the
+ * pointer-hover state here so we don't disturb the brand focus ring. */
 .qr-chip {
   background: var(--paper-cream);
+  transition: outline-color 150ms ease-out;
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+.qr-chip:hover {
+  outline-color: var(--ink-deep);
+}
+@media (prefers-reduced-motion: reduce) {
+  .qr-chip { transition: none; }
 }
 
 /* §5.4 PasteTab textarea — desktop / portrait default. Compact-landscape

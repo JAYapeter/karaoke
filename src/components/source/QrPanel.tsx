@@ -40,9 +40,12 @@ export const QrPanel = ({ variant = 'full', onOpenJoinModal, serverHost }: QrPan
     return (
       <button
         type="button"
-        // Default `.icon-btn` (dark-on-cream hover tint) — NOT `--on-dark`,
-        // because the chip's surface is cream (`.qr-chip`); the `--on-dark`
-        // tint is cream-on-cream and effectively invisible against the chip.
+        // `.qr-chip` owns the visible HOVER affordance via an outline (see
+        // riso.css). The chip's <img> child fills 100%/100%, so the
+        // `.icon-btn` background hover tint is occluded — outline is the
+        // only thing that can show through. We keep `.icon-btn` anyway for
+        // the cursor:pointer, tap-flash, and reduced-motion override; its
+        // background-color hover rule is harmless dead behavior here.
         className="qr-chip hit-target icon-btn"
         aria-label="Show join URL"
         onClick={onOpenJoinModal}

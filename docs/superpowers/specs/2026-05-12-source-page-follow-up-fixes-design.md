@@ -151,14 +151,15 @@ The redesign spec specified semantic class names (`.hit-target`, `.uc`) that own
 | `SetlistPanel.tsx:137` | ⤴ move-to-top button | (inline only) | cream | `icon-btn` |
 | `SetlistPanel.tsx:138` | × remove button | (inline only) | cream | `icon-btn` |
 | `SetlistPanel.tsx` (header) | 🔀 shuffle button | `.shuffle-btn` | cream | `icon-btn` |
-| `NowPlayingStrip.tsx` | pitch − / + buttons | `.hit-target uc` | dark (in video frame) | `icon-btn icon-btn--on-dark` |
-| `NowPlayingStrip.tsx` | transport ⏮ ⏸/▶ ⏭ buttons | `.hit-target uc` | dark (in video frame) | `icon-btn icon-btn--on-dark` |
-| `QrPanel.tsx` (chip variant only) | chip wrapper | `.qr-chip .hit-target` | dark (rail BG) | `icon-btn icon-btn--on-dark` |
+| `NowPlayingStrip.tsx` | pitch − / + buttons | `.hit-target uc` | cream (`.paper-card` strip) | `icon-btn` |
+| `NowPlayingStrip.tsx` | transport ⏮ ⏸/▶ ⏭ buttons | `.hit-target uc` | cream (`.paper-card` strip) | `icon-btn` |
+| `QrPanel.tsx` (chip variant only) | chip wrapper | `.qr-chip .hit-target` | cream (`.qr-chip` opaque cream) | `icon-btn` (hover affordance via OUTLINE on `.qr-chip` — img child occludes the background tint) |
 
 Add the listed classes alongside (NOT instead of) the existing ones.
 
 ### §5.4 Edge cases & contracts
-- **Hover background contrast.** `.icon-btn:hover` (default tint, `rgba(10, 8, 8, 0.08)`) is visible on cream `var(--paper-cream)` but invisible on dark `var(--ink-black)`. Buttons on dark surfaces must additionally carry the `.icon-btn--on-dark` modifier. The application table in §5.3 specifies which buttons need it: NowPlayingStrip transport + pitch (inside video frame) get `--on-dark`; SetlistPanel ⤴/×/🔀 (inside cream `.paper-card`) get the default. The QrPanel chip variant sits on the dark rail background and gets `--on-dark`.
+- **Hover background contrast.** `.icon-btn:hover` (default tint, `rgba(10, 8, 8, 0.08)`) is visible on cream `var(--paper-cream)` but invisible on dark `var(--ink-black)`. Buttons on dark surfaces must additionally carry the `.icon-btn--on-dark` modifier. The application table in §5.3 specifies which buttons need it: all source-rail buttons in this round (NowPlayingStrip pitch + transport, SetlistPanel ⤴/×/🔀, QrPanel chip) sit on cream surfaces (`.paper-card` or `.qr-chip`'s own cream backing) and use the DEFAULT `.icon-btn`. The `--on-dark` modifier is reserved for any future buttons placed directly on a dark `var(--ink-black)` surface.
+- **Image-occluded backgrounds.** When a button's child fills the entire button (e.g. `.qr-chip` wraps an `<img>` at width:100%/height:100%), the `:hover` background-color tint is occluded and provides no visible affordance. Such buttons must paint their hover affordance via `outline` (which renders outside the box) — see `.qr-chip` in `riso.css` for the established pattern. Keyboard focus is left to the global `:focus-visible` red ring.
 - **Disabled state.** `KeyStepper` and YOU'RE UP buttons aren't on `/source` — out of scope. The transport play/pause toggle is never disabled in current code; no new disabled-state UI needed.
 - **`:focus-visible`** is already provided by the global `riso.css:53` rule (`outline: 2px solid var(--hanko-red); outline-offset: 2px`). `.icon-btn` does not override it.
 - **Tap-flash conflict.** `tap-flash` keyframe sets background-color via animation. The `transition` on `.icon-btn` would normally compete — but tap-flash uses an explicit color and finishes in 150 ms; the next state (hover or rest) takes over via transition. No flicker observed in the existing `.youre-up__btn` callsite that uses the same pattern.

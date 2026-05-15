@@ -43,16 +43,21 @@ export const NowPlayingStrip = ({ conn, player }: { conn: Connection; player: Ex
       <div className="now-playing-strip__controls">
         {/* No inline `background` on these buttons — `.icon-btn` class owns
             transparent at rest so the `:hover` tint can apply (inline
-            `background` would shadow class-defined hover via specificity). */}
+            `background` would shadow class-defined hover via specificity).
+            We use the DEFAULT `.icon-btn` (dark-on-cream tint), NOT the
+            `--on-dark` modifier: the strip wraps these buttons in a
+            `.paper-card` (cream surface), so a cream-on-cream hover tint
+            from `--on-dark` would be invisible. The default tint is the
+            visible affordance against the cream backing. */}
         <div className="now-playing-strip__pitch" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Lower pitch by one semitone" onClick={() => setLive(player.livePitch - 1)} style={{ color: 'var(--ink-black)', fontSize: 14 }}>−</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label="Lower pitch by one semitone" onClick={() => setLive(player.livePitch - 1)} style={{ color: 'var(--ink-black)', fontSize: 14 }}>−</button>
           <span className="hanko" aria-live="polite" style={{ minWidth: '2.4em', textAlign: 'center' }}>{fmtKey(player.livePitch)}</span>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Raise pitch by one semitone" onClick={() => setLive(player.livePitch + 1)} style={{ color: 'var(--ink-black)', fontSize: 14 }}>+</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label="Raise pitch by one semitone" onClick={() => setLive(player.livePitch + 1)} style={{ color: 'var(--ink-black)', fontSize: 14 }}>+</button>
         </div>
         <div className="now-playing-strip__transport" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Previous song" onClick={prev} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏮</button>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label={player.status === 'paused' ? 'Play' : 'Pause'} onClick={togglePause} style={{ color: 'var(--ink-black)', fontSize: 14 }}>{player.status === 'paused' ? '▶' : '⏸'}</button>
-          <button type="button" className="hit-target uc icon-btn icon-btn--on-dark" aria-label="Skip" onClick={skip} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏭</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label="Previous song" onClick={prev} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏮</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label={player.status === 'paused' ? 'Play' : 'Pause'} onClick={togglePause} style={{ color: 'var(--ink-black)', fontSize: 14 }}>{player.status === 'paused' ? '▶' : '⏸'}</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label="Skip" onClick={skip} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏭</button>
         </div>
       </div>
     </div>
