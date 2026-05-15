@@ -380,11 +380,14 @@ input, textarea, select { font-size: 16px; }
   .search-row[data-expanded="1"] .search-row__body { max-height: none; }
 }
 
-/* §5.5 YOU'RE UP tap flash + mount. */
+/* §5.5 YOU'RE UP tap flash + mount. Uses `background-color` (longhand) — NOT
+   `background` (shorthand) — so consumers' class-set `background` (e.g.
+   .qr-chip's cream backing) and any `background-image` are preserved during
+   the flash. The shorthand would wipe them. */
 @keyframes tap-flash {
-  0%   { background: transparent; }
-  20%  { background: var(--hanko-red); }
-  100% { background: transparent; }
+  0%   { background-color: transparent; }
+  20%  { background-color: var(--hanko-red); }
+  100% { background-color: transparent; }
 }
 .youre-up__btn:active { animation: tap-flash 120ms ease-out; }
 .youre-up { opacity: 0; transition: opacity 150ms ease-out; }
