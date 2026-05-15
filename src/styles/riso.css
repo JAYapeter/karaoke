@@ -99,6 +99,39 @@ input, textarea, select { font-size: 16px; }
   min-block-size: 48px !important;
 }
 
+/* §5 affordance utility — applies to interactive icon-glyph buttons. */
+.icon-btn {
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background-color 150ms ease-out;
+}
+/* Default tint — for buttons sitting on the cream `.paper-card` surface. */
+.icon-btn:hover {
+  background-color: rgba(10, 8, 8, 0.08);
+}
+/* Inverted tint — for buttons sitting on the dark video-frame / ink-black surface. */
+.icon-btn--on-dark:hover {
+  background-color: rgba(255, 248, 224, 0.08);
+}
+.icon-btn:active {
+  animation: tap-flash 150ms ease-out;
+}
+/* Disabled / aria-disabled buttons should not show clickable affordance. */
+.icon-btn[disabled],
+.icon-btn[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+.icon-btn[disabled]:hover,
+.icon-btn[aria-disabled="true"]:hover,
+.icon-btn--on-dark[disabled]:hover,
+.icon-btn--on-dark[aria-disabled="true"]:hover {
+  background-color: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn { transition: none; }
+  .icon-btn:active { animation: none; }
+}
+
 /* §5.4 PasteTab textarea — desktop / portrait default. Compact-landscape
  * override (4em) is declared later in this file so it wins by source order
  * within an at-rule of equal specificity. Keep this rule OUT of an inline
