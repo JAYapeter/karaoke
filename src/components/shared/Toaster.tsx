@@ -60,7 +60,10 @@ const ToastItem = ({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
       }}
     >
       <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-        <div className="uc" style={{ fontSize: 12, color: COLORS[toast.level], marginBottom: 2 }}>{toast.level}</div>
+        {/* C2: level label in --ink-muted (≈7.6:1 on cream). The level
+            color cue lives on the card's left border (above), which is
+            decorative (non-text) so it's exempt from the text ratio. */}
+        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)', marginBottom: 2 }}>{toast.level}</div>
         <div style={{ fontFamily: 'var(--mono-font)', fontSize: 12, wordBreak: 'break-word' }}>{toast.message}</div>
       </div>
       {toast.undo && (
@@ -68,10 +71,13 @@ const ToastItem = ({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }
           type="button"
           className="hit-target uc"
           onClick={() => { toast.undo!.onTap(); onDismiss() }}
+          // C2: UNDO is an action on the cream toast — cigarette/pink fail
+          // contrast here, so use the app's action red (≈5.49:1) for all
+          // levels. The level hue still reads from the card's left border.
           style={{
             background: 'transparent',
-            color: COLORS[toast.level],
-            border: `1px solid ${COLORS[toast.level]}`,
+            color: 'var(--hanko-red)',
+            border: '1px solid var(--hanko-red)',
             padding: '6px 10px',
             fontSize: 12,
           }}

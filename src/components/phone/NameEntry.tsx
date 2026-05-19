@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { setStoredName } from '@/lib/client/ws'
+import { Tick } from '@/components/shared/Tick'
 
 export const NameEntry = ({ onSubmit }: { onSubmit: (n: string) => void }) => {
   const [name, setName] = useState('')
@@ -21,7 +22,7 @@ export const NameEntry = ({ onSubmit }: { onSubmit: (n: string) => void }) => {
         className="paper-card paper-grain"
         style={{ width: 360, maxWidth: '100%' }}
       >
-        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>▌ enter the room</div>
+        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}><Tick />enter the room</div>
         <h2 style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 22, margin: '8px 0 12px' }}>
           What&apos;s your name?
         </h2>

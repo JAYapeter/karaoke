@@ -14,6 +14,9 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  // M4: match the browser chrome (URL bar / notch surround) to the pitch-black
+  // app so there's no light band on the exact phones guests use.
+  themeColor: '#0a0808',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

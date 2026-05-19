@@ -55,9 +55,9 @@ export const NowPlayingStrip = ({ conn, player }: { conn: Connection; player: Ex
           <button type="button" className="hit-target uc icon-btn" aria-label="Raise pitch by one semitone" onClick={() => setLive(player.livePitch + 1)} style={{ color: 'var(--ink-black)', fontSize: 14 }}>+</button>
         </div>
         <div className="now-playing-strip__transport" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          <button type="button" className="hit-target uc icon-btn" aria-label="Previous song" onClick={prev} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏮</button>
-          <button type="button" className="hit-target uc icon-btn" aria-label={player.status === 'paused' ? 'Play' : 'Pause'} onClick={togglePause} style={{ color: 'var(--ink-black)', fontSize: 14 }}>{player.status === 'paused' ? '▶' : '⏸'}</button>
-          <button type="button" className="hit-target uc icon-btn" aria-label="Skip" onClick={skip} style={{ color: 'var(--ink-black)', fontSize: 14 }}>⏭</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label="Previous song" onClick={prev} style={{ color: 'var(--ink-black)', fontSize: 14 }}>{'\u23EE\uFE0E'}</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label={player.status === 'paused' ? 'Play' : 'Pause'} onClick={togglePause} style={{ color: 'var(--ink-black)', fontSize: 14 }}>{player.status === 'paused' ? '\u25B6\uFE0E' : '\u23F8\uFE0E'}</button>
+          <button type="button" className="hit-target uc icon-btn" aria-label="Skip" onClick={skip} style={{ color: 'var(--ink-black)', fontSize: 14 }}>{'\u23ED\uFE0E'}</button>
         </div>
       </div>
     </div>

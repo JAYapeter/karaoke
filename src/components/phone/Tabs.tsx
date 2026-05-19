@@ -70,6 +70,13 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
         <span aria-hidden style={{ color: 'var(--riso-pink)' }}>●</span>
+        {/* H2: name stays ellipsis-truncated — it shrinks via the parent
+            div's minWidth:0 (overflow:hidden + ellipsis here). Deliberately
+            NO hard min-width on the span: that could force horizontal
+            overflow at ≤320px ("no horizontal scroll on mobile" is a hard
+            rule), and the name can't then collapse to absorb it. The actual
+            H2 fix is the count pill below — it no longer grows the nav with
+            the queue count, so the name has room before it must ellipsize. */}
         <span className="uc" style={{ fontSize: 13, color: 'var(--paper-cream)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {name}
         </span>
@@ -80,7 +87,9 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
           className="hit-target uc"
           style={{ background: 'transparent', color: 'var(--paper-cream)', fontSize: 14 }}
         >
-          ⚙
+          {/* M2: U+FE0E forces text (monochrome) presentation so iOS/Android
+              don't render ⚙ as a color emoji against the riso identity. */}
+          {'\u2699\uFE0E'}
         </button>
       </div>
       <nav style={{ display: 'flex', gap: 6 }} aria-label="Phone client tabs">
@@ -92,6 +101,11 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
               type="button"
               onClick={() => onTabChange(t)}
               aria-current={active ? 'page' : undefined}
+              aria-label={
+                t === 'queue' && typeof queueBadge === 'number' && queueBadge > 0
+                  ? `Queue — ${queueBadge} queued`
+                  : undefined
+              }
               className="hit-target uc"
               style={{
                 padding: '8px 12px',
@@ -101,9 +115,33 @@ export const Tabs = forwardRef<HTMLElement, TabsProps>(function Tabs(
                 border: '1px solid transparent',
               }}
             >
-              {t === 'queue' && typeof queueBadge === 'number' && queueBadge > 0
-                ? `${t.toUpperCase()} · ${queueBadge}`
-                : t.toUpperCase()}
+              {/* H2: count is a fixed-width on-brand pill, not part of the
+                  label string — so the badge growing during a party no
+                  longer bloats the nav and squeezes the name. The button's
+                  aria-label carries the count for SR; the pill is decorative
+                  (aria-hidden). Cream/ink reads on both the active
+                  (hanko-red) and inactive tab surfaces. */}
+              {t.toUpperCase()}
+              {t === 'queue' && typeof queueBadge === 'number' && queueBadge > 0 && (
+                <span
+                  aria-hidden="true"
+                  style={{
+                    marginLeft: 6,
+                    padding: '0 5px',
+                    background: 'var(--paper-cream)',
+                    color: 'var(--ink-black)',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    // letter-spacing is inherited: the parent .uc button sets
+                    // 0.2em, which would track the digits apart. Reset to 0.
+                    letterSpacing: 0,
+                    borderRadius: 2,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {queueBadge}
+                </span>
+              )}
             </button>
           )
         })}

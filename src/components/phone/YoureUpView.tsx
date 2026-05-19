@@ -4,8 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Connection } from '@/lib/client/ws'
 import type { PlayerState } from '@/lib/types/state'
 import type { ServerMessage } from '@/lib/types/protocol'
-import { clampPitch } from './KeyStepper'
+import { clampPitch, atPitchFloor, atPitchCeil } from './KeyStepper'
 import { shouldReplayPendingPitch } from '@/lib/client/pending-pitch-replay'
+import { Tick } from '@/components/shared/Tick'
 
 const NO_ACK_RETRY_MS = 6000
 
@@ -176,8 +177,8 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
           // font-size enforced by .youre-up__sub-header cascade.
         }}
       >
-        <span>{offline ? '▌ source offline — reconnecting…' : '▌ YOU’RE UP'}</span>
-        <span>{offline ? '' : (player.status === 'paused' ? '▌ PAUSED' : `${fmtMmSs(player.positionSec)} / ${fmtMmSs(player.item.durationSec)}`)}</span>
+        <span>{offline ? <><Tick />source offline — reconnecting…</> : <><Tick />YOU’RE UP</>}</span>
+        <span>{offline ? '' : (player.status === 'paused' ? <><Tick />PAUSED</> : `${fmtMmSs(player.positionSec)} / ${fmtMmSs(player.item.durationSec)}`)}</span>
       </div>
       <div className="youre-up__title-block" style={{ padding: '24px 16px 8px' }}>
         <h1 className="youre-up__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, margin: 0, color: 'var(--paper-cream)' }}>
@@ -195,9 +196,11 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
           <button
             type="button"
-            className="youre-up__btn uc"
+            className="youre-up__btn uc btn-disable-dim"
             aria-label="Lower pitch by one semitone"
             onClick={() => onPitchChange(pitch - 1)}
+            disabled={atPitchFloor(pitch)}
+            aria-disabled={atPitchFloor(pitch) || undefined}
             style={{
               padding: '8px 14px',
               background: 'transparent', color: 'var(--paper-cream)',
@@ -208,9 +211,11 @@ export const YoureUpView = ({ conn, player, sourceConnected, sourceReady }: Your
           >−</button>
           <button
             type="button"
-            className="youre-up__btn uc"
+            className="youre-up__btn uc btn-disable-dim"
             aria-label="Raise pitch by one semitone"
             onClick={() => onPitchChange(pitch + 1)}
+            disabled={atPitchCeil(pitch)}
+            aria-disabled={atPitchCeil(pitch) || undefined}
             style={{
               padding: '8px 14px',
               background: 'transparent', color: 'var(--paper-cream)',

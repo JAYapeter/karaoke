@@ -62,6 +62,34 @@ input, textarea, select { font-size: 16px; }
   outline-offset: 2px;
 }
 
+/* Disabled affordance (H3 + M3) — OPT-IN via `.btn-disable-dim`, NOT a
+   global button:disabled rule. A global rule would also dim controls whose
+   disabled state must stay visually neutral: the SearchRow expand toggle
+   (its `disabled` is a mid-flight reflow lock — dimming the result title
+   would fight H1's readability goal) and the PendingAddsTray stale-visual
+   button (its informational text must keep contrast). So only controls that
+   genuinely read as inert opt in: GO / RESOLVE carry the class CONDITIONALLY
+   — only in their inert empty query/URL state, NOT while in flight (the
+   className is dropped when activeSearchMsgId is set / while busy, because
+   then the label is status text "…" / "Resolving…" that .45 opacity would
+   crush). The pitch steppers (KeyStepper / YoureUpView ±) opt in
+   unconditionally — their disabled glyphs are control labels, not essential
+   text, and the readout stays full-opacity. The ADD button does NOT opt in
+   at all — it is only ever disabled while *displaying status* ("queueing…" /
+   "expired"); its bg-color + label already signal that state. Static (no
+   transition) — a disabled state resolves instantly. */
+.btn-disable-dim:disabled,
+.btn-disable-dim[aria-disabled="true"] {
+  opacity: 0.45;
+}
+
+/* L4 placeholder contrast — the UA default placeholder alpha on the cream
+   inputs falls below 4.5:1. Pin to --ink-muted (≈7.6:1 on cream). */
+input::placeholder, textarea::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+
 /* §5.4 / §5.6 viewport units. vh first, dvh second. Every page-root class
    declared in the spec, kept as the spec writes it so the source-of-truth
    selector list stays implementable verbatim. The components in this plan
@@ -368,6 +396,27 @@ input, textarea, select { font-size: 16px; }
 /* §4.3 search row explicit 56 CSS px. */
 .search-row > button { min-block-size: 56px; }
 
+/* H1 — long titles. 2-line clamp util for queue / now-playing / pending
+   tray so near-duplicate karaoke titles ("… Higher Key" vs "… Lower Key")
+   are distinguishable on a phone. Pure CSS, no motion. */
+.title-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+/* H1 — search-result titles use MarqueeText (the full title scrolls into
+   view, since picking the right near-duplicate result is the task there).
+   MarqueeText forwards `className` to its .marquee container but NOT inline
+   `style`, so the display-font lives here for the inner <span> to inherit
+   — mirrors the .setlist-row__title pattern. */
+.search-row__title-text {
+  font-family: var(--display-font);
+  font-style: italic;
+  font-size: 16px;
+}
+
 /* §5.5 LIVE badge pulse. */
 @keyframes live-pulse {
   0%, 100% { opacity: 1.0; }
@@ -576,6 +625,23 @@ input, textarea, select { font-size: 16px; }
    CSS so the compact-landscape media query below can win — components
    MUST NOT set inline `font-size` on .queue-now-playing__title. */
 .queue-now-playing__title { font-size: 18px; }
+
+/* M5 — keep the search / paste action rows reachable on phones in PORTRAIT
+   too (previously sticky only in compact landscape, so in portrait the
+   search box scrolled away under a long result list). Offset by the live
+   --top-occluder-height so they pin just below the sticky chrome. The
+   compact-landscape block below restates the same declarations; identical,
+   so the cascade overlap in landscape is harmless. */
+@media (max-width: 720px) {
+  .search-tab__query-row,
+  .paste-tab__action-row {
+    position: sticky;
+    top: var(--top-occluder-height, 0);
+    z-index: 1;
+    background: var(--ink-black);
+    padding-block: 6px;
+  }
+}
 
 /* §5.4 compact landscape (height ≤ 480px on phone widths). */
 @media (max-width: 720px) and (max-height: 480px) {

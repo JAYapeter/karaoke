@@ -3,8 +3,17 @@ import { randomUUID } from '@/lib/client/uuid'
 import type { Connection } from '@/lib/client/ws'
 import type { QueueItem, ServerState } from '@/lib/types/state'
 import { useToaster } from '@/components/shared/Toaster'
+import { Tick } from '@/components/shared/Tick'
 
 const UNDO_TTL_MS = 6000
+
+// L3 — elapsed / total readout for the now-playing card (mirrors YoureUpView).
+const fmtMmSs = (s: number) => {
+  if (!isFinite(s) || s < 0) s = 0
+  const m = Math.floor(s / 60)
+  const sec = Math.floor(s % 60)
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
 
 type Props = { conn: Connection; sessionId: string; sourceConnected: boolean; sourceReady: boolean }
 
@@ -35,7 +44,7 @@ export const QueueView = ({ conn, sessionId, sourceConnected, sourceReady }: Pro
     <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <NowPlayingCard state={state} sourceConnected={sourceConnected} sourceReady={sourceReady} />
       <h3 className="uc" style={{ fontSize: 12, color: 'var(--paper-cream)', letterSpacing: '0.2em' }}>
-        ▌ up next · {upNextCount}
+        <Tick />up next · {upNextCount}
       </h3>
       {renderedQueue.length === 0 && !idleWithQueue && (
         <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', color: 'var(--ink-muted)' }}>
@@ -50,7 +59,7 @@ export const QueueView = ({ conn, sessionId, sourceConnected, sourceReady }: Pro
             </div>
             {/* font-size owned by .queue-now-playing__title in riso.css —
                 desktop 18px, compact-landscape 16px. No inline `fontSize`. */}
-            <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div className="queue-now-playing__title title-clamp-2" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic' }}>
               {it.title}
             </div>
             {it.prePitch !== 0 && (
@@ -81,7 +90,7 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
   if (offline && p.status === 'idle') {
     return (
       <div className="paper-card paper-grain paper-card--accent">
-        <div className="uc" style={{ fontSize: 13, color: 'var(--riso-pink)' }}>▌ offline · waiting for source</div>
+        <div className="uc" style={{ fontSize: 13, color: 'var(--hanko-red)' }}><Tick />offline · waiting for source</div>
       </div>
     )
   }
@@ -89,7 +98,7 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
   if (p.status === 'idle' && state.queue.length === 0) {
     return (
       <div className="paper-card paper-grain">
-        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>▌ idle — queue something</div>
+        <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}><Tick />idle — queue something</div>
       </div>
     )
   }
@@ -98,7 +107,7 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
     const next = state.queue[0]!
     return (
       <div className="paper-card paper-grain paper-card--accent">
-        <div className="next-up-badge uc" style={{ fontWeight: 700, color: 'var(--ink-black)' }}>▌ NEXT UP</div>
+        <div className="next-up-badge uc" style={{ fontWeight: 700, color: 'var(--ink-black)' }}><Tick />NEXT UP</div>
         {/* font-size owned by .queue-now-playing__title in riso.css —
             desktop 18px, compact-landscape 16px. No inline `fontSize`. */}
         <div className="queue-now-playing__title" style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900 }}>{next.title}</div>
@@ -117,12 +126,12 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
   const progress = Math.max(0, Math.min(1, p.positionSec / Math.max(1, p.item.durationSec)))
   const badge =
     p.status === 'paused'
-      ? (<div className="paused-badge uc" style={{ fontWeight: 700, color: 'var(--ink-black)' }}>▌ PAUSED</div>)
-      : (<div className="now-playing-badge uc" style={{ color: 'var(--riso-pink)' }}>▌ NOW PLAYING</div>)
+      ? (<div className="paused-badge uc" style={{ fontWeight: 700, color: 'var(--ink-black)' }}><Tick />PAUSED</div>)
+      : (<div className="now-playing-badge uc" style={{ color: 'var(--hanko-red)' }}><Tick />NOW PLAYING</div>)
   return (
     <div className="paper-card paper-grain paper-card--accent">
       {offline ? (
-        <div className="uc" style={{ fontSize: 13, color: 'var(--riso-pink)' }}>▌ OFFLINE</div>
+        <div className="uc" style={{ fontSize: 13, color: 'var(--hanko-red)' }}><Tick />OFFLINE</div>
       ) : badge}
       {/* font-size owned by .queue-now-playing__title in riso.css —
           desktop 18px, compact-landscape 16px. Setting inline `fontSize`
@@ -132,6 +141,9 @@ const NowPlayingCard = ({ state, sourceConnected, sourceReady }: { state: Server
       </div>
       <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
         {p.item.queuedBy.name.toUpperCase()} · KEY {p.livePitch >= 0 ? '+' : ''}{p.livePitch}
+      </div>
+      <div className="uc" style={{ marginTop: 4, fontSize: 12, color: 'var(--ink-muted)' }}>
+        {fmtMmSs(p.positionSec)} / {fmtMmSs(p.item.durationSec)}
       </div>
       <div style={{ marginTop: 6, height: 3, background: 'var(--ink-muted)' }}>
         {/* No CSS transition on the width — that would be a decorative

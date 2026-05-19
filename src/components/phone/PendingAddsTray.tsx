@@ -67,7 +67,7 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
           >
             <button
               type="button"
-              className="hit-target uc"
+              className="hit-target uc title-clamp-2"
               aria-label={allowRetry ? `Retry pending add for ${displayName}` : `${displayName} expired — dismiss with ×`}
               onClick={() => { if (allowRetry) onRetry(entry.msgId) }}
               disabled={!allowRetry}
@@ -80,9 +80,6 @@ export const PendingAddsTray = forwardRef<HTMLDivElement, PendingAddsTrayProps>(
                 background: 'transparent',
                 color: cls === 'stale-visual' ? 'var(--riso-pink)' : 'var(--paper-cream)',
                 fontSize: 12,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
               }}
             >
               {displayName} · key {entry.prePitch >= 0 ? '+' : ''}{entry.prePitch} · {labelFor(cls)}

@@ -6,6 +6,7 @@ import { setAudioGraph } from '@/lib/client/audio-graph-ref'
 import { createSourceReadyGate, type SourceReadyGate } from '@/lib/client/source-ready-gate'
 import type { Connection } from '@/lib/client/ws'
 import { POSITION_HEARTBEAT_MS } from '@/lib/config'
+import { Tick } from '@/components/shared/Tick'
 import { NowPlayingStrip } from './NowPlayingStrip'
 import { IdleSplash } from './IdleSplash'
 import { SourceOfflineState } from './SourceOfflineState'
@@ -190,7 +191,7 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
               // font-size enforced by .live-badge cascade (12 desktop, 13 phones).
             }}
           >
-            ▌ LIVE 出演中
+            <Tick />LIVE 出演中
           </div>
           <NowPlayingStrip conn={conn} player={player} />
         </>

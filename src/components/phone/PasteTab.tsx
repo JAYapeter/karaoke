@@ -7,6 +7,7 @@ import { KeyStepper, clampPitch } from './KeyStepper'
 import { usePendingAdds } from '@/lib/client/pending-adds-context'
 import { classifyPendingState } from '@/lib/client/pending-adds'
 import { useToaster } from '@/components/shared/Toaster'
+import { Tick } from '@/components/shared/Tick'
 
 const VIDEO_ID = /(?:v=|youtu\.be\/|shorts\/)([A-Za-z0-9_-]{11})/
 const RESOLVE_TIMEOUT_MS = 12000
@@ -233,6 +234,7 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://youtube.com/watch?v=…"
           aria-label="YouTube URL"
+          inputMode="url"
           rows={compact ? 2 : 3}
           // Round-3 #3: min-height is in riso.css (.paste-tab__textarea) so
           // the compact-landscape media-query override can win. An inline
@@ -245,13 +247,17 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
           onClick={resolve}
           disabled={busy || !url.trim()}
           aria-disabled={busy || !url.trim() || undefined}
-          className="hit-target uc"
+          // btn-disable-dim ONLY in the inert empty-URL state. While busy
+          // the label is "Resolving…" (status, and the sole in-flight
+          // indicator) — dimming it to .45 would crush it like the ADD-button
+          // bug. So drop the class while busy.
+          className={`hit-target uc${busy ? '' : ' btn-disable-dim'}`}
           style={{ padding: '10px 14px', background: 'var(--hanko-red)', color: 'var(--paper-cream)', fontSize: 12 }}
         >
           {busy ? 'Resolving…' : 'RESOLVE'}
         </button>
       </div>
-      {err && <div className="uc" style={{ fontSize: 12, color: 'var(--riso-pink)' }}>▌ {err}</div>}
+      {err && <div className="uc" style={{ fontSize: 12, color: 'var(--riso-pink)' }}><Tick />{err}</div>}
       {meta && (
         <div className="paper-card paper-grain paper-card--accent">
           <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 16 }}>{meta.title}</div>
@@ -270,6 +276,12 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
                 onClick={doAdd}
                 disabled={lockAdd}
                 aria-disabled={lockAdd || undefined}
+                // No `.btn-disable-dim`: ADD is only ever disabled while
+                // showing status ("queueing…" on --ink-muted, or "expired"
+                // on --hanko-red). Opacity .45 would crush that essential
+                // label to ~2.1:1. The bg-color + label change already
+                // signal the locked state — dimming is redundant and a
+                // contrast regression here.
                 className="hit-target uc"
                 style={{
                   padding: '10px 16px',
@@ -285,17 +297,17 @@ export const PasteTab = ({ conn, currentEpoch, isActive, queueLen }: PasteTabPro
                   onClick={cancelPending}
                   aria-label={classification === 'stale-visual' ? 'Dismiss pending add' : 'Cancel pending add'}
                   className="hit-target uc"
-                  style={{ background: 'transparent', color: 'var(--riso-pink)', fontSize: 12 }}
+                  style={{ background: 'transparent', color: 'var(--ink-muted)', fontSize: 12 }}
                 >×</button>
               )}
             </div>
           </div>
           {addError && (
-            <div className="uc" style={{ marginTop: 6, fontSize: 12, color: 'var(--riso-pink)' }}>▌ {addError}</div>
+            <div className="uc" style={{ marginTop: 6, fontSize: 12, color: 'var(--hanko-red)' }}><Tick />{addError}</div>
           )}
           {classification === 'stale-visual' && !addError && (
-            <div className="uc" style={{ marginTop: 6, fontSize: 12, color: 'var(--riso-pink)' }}>
-              ▌ expired (server may have applied this)
+            <div className="uc" style={{ marginTop: 6, fontSize: 12, color: 'var(--hanko-red)' }}>
+              <Tick />expired (server may have applied this)
             </div>
           )}
         </div>

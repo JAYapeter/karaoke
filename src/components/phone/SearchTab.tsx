@@ -8,6 +8,8 @@ import { KeyStepper, clampPitch } from './KeyStepper'
 import { usePendingAdds } from '@/lib/client/pending-adds-context'
 import { classifyPendingState, type PendingAdd } from '@/lib/client/pending-adds'
 import { useToaster } from '@/components/shared/Toaster'
+import { MarqueeText } from '@/components/shared/MarqueeText'
+import { Tick } from '@/components/shared/Tick'
 
 const SEARCH_TIMEOUT_MS = 8000
 const ADD_ACK_TIMEOUT_MS = 6000
@@ -297,7 +299,11 @@ export const SearchTab = ({ conn, currentEpoch, isActive, queueLen, onAddedSwitc
         />
         <button
           type="button"
-          className="hit-target uc"
+          // btn-disable-dim ONLY in the inert empty-query state. While a
+          // search is in flight the label is "…" (status) — dimming that to
+          // .45 would crush it like the ADD-button bug. So drop the class
+          // when activeSearchMsgId is set.
+          className={`hit-target uc${activeSearchMsgId === null ? ' btn-disable-dim' : ''}`}
           data-keyboard-primary-action="go"
           onClick={doSearch}
           disabled={activeSearchMsgId !== null || !q.trim()}
@@ -447,9 +453,9 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
         }}
       >
         <div style={{ flex: '1 1 auto', minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontSize: 16, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {result.title}
-          </div>
+          {/* H1: full title scrolls into view — near-duplicate karaoke
+              uploads differ only past where a single line would clip. */}
+          <MarqueeText text={result.title} className="search-row__title-text" />
           <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>
             {result.channel} · {Math.floor(result.durationSec / 60)}:{String(result.durationSec % 60).padStart(2, '0')}
           </div>
@@ -471,6 +477,12 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
               onClick={onAdd}
               disabled={lockAdd}
               aria-disabled={lockAdd || undefined}
+              // No `.btn-disable-dim`: ADD is only ever disabled while
+              // showing status ("queueing…" on --ink-muted, or "expired" on
+              // --hanko-red). Opacity .45 would crush that essential label to
+              // ~2.1:1. The bg-color + label change already signal the locked
+              // state (the original hardened design) — dimming is both
+              // redundant and a contrast regression here.
               className="hit-target uc"
               style={{
                 padding: '10px 16px',
@@ -486,17 +498,17 @@ const SearchRow = ({ result, isExpanded, bodyId, onToggle, pitch, setPitch, onAd
                 onClick={onCancelPending}
                 aria-label={classification === 'stale-visual' ? `Dismiss pending add for ${result.title}` : `Cancel pending add for ${result.title}`}
                 className="hit-target uc"
-                style={{ background: 'transparent', color: 'var(--riso-pink)', fontSize: 12 }}
+                style={{ background: 'transparent', color: 'var(--ink-muted)', fontSize: 12 }}
               >×</button>
             )}
           </div>
         </div>
         {error && (
-          <div className="uc" style={{ padding: '4px 10px', fontSize: 12, color: 'var(--riso-pink)' }}>▌ {error}</div>
+          <div className="uc" style={{ padding: '4px 10px', fontSize: 12, color: 'var(--hanko-red)' }}><Tick />{error}</div>
         )}
         {classification === 'stale-visual' && !error && (
-          <div className="uc" style={{ padding: '4px 10px', fontSize: 12, color: 'var(--riso-pink)' }}>
-            ▌ expired (server may have applied this)
+          <div className="uc" style={{ padding: '4px 10px', fontSize: 12, color: 'var(--hanko-red)' }}>
+            <Tick />expired (server may have applied this)
           </div>
         )}
       </div>

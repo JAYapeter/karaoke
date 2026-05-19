@@ -8,6 +8,11 @@ export const clampPitch = (n: number): number => {
   return Math.max(PITCH_MIN, Math.min(PITCH_MAX, Math.round(n)))
 }
 
+// Boundary predicates: a step in that direction would be clamped to a no-op,
+// so the corresponding button is disabled (no dead taps at ±6).
+export const atPitchFloor = (n: number): boolean => n <= PITCH_MIN
+export const atPitchCeil = (n: number): boolean => n >= PITCH_MAX
+
 const fmtKey = (p: number) => (p >= 0 ? `+${p}` : String(p))
 
 export type KeyStepperProps = {
@@ -20,15 +25,17 @@ export type KeyStepperProps = {
 export const KeyStepper = ({ value, onChange, disabled, readoutSize = 'sm' }: KeyStepperProps) => {
   const bump = (delta: number) => onChange(clampPitch(value + delta))
   const isLg = readoutSize === 'lg'
+  const lowerDisabled = disabled || atPitchFloor(value)
+  const raiseDisabled = disabled || atPitchCeil(value)
   return (
     <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <button
         type="button"
-        className="hit-target uc"
+        className="hit-target uc btn-disable-dim"
         aria-label="Lower pitch by one semitone"
         onClick={() => bump(-1)}
-        disabled={disabled}
-        aria-disabled={disabled || undefined}
+        disabled={lowerDisabled}
+        aria-disabled={lowerDisabled || undefined}
         style={{ background: 'transparent', color: 'inherit', fontSize: isLg ? 24 : 14 }}
       >−</button>
       <span
@@ -41,11 +48,11 @@ export const KeyStepper = ({ value, onChange, disabled, readoutSize = 'sm' }: Ke
       </span>
       <button
         type="button"
-        className="hit-target uc"
+        className="hit-target uc btn-disable-dim"
         aria-label="Raise pitch by one semitone"
         onClick={() => bump(1)}
-        disabled={disabled}
-        aria-disabled={disabled || undefined}
+        disabled={raiseDisabled}
+        aria-disabled={raiseDisabled || undefined}
         style={{ background: 'transparent', color: 'inherit', fontSize: isLg ? 24 : 14 }}
       >+</button>
     </div>

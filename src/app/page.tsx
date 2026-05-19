@@ -323,15 +323,15 @@ const PhoneApp = () => {
                   // only move forward.
                   const liveLen = connRef.current.state?.queue.length ?? 0
                   const reportLen = Math.max(liveLen, queueLen + 1)
-                  showToast({ level: 'info', message: `▌ Added — ${reportLen} in queue`, ttlMs: 2000 })
+                  showToast({ level: 'info', message: `Added — ${reportLen} in queue`, ttlMs: 2000 })
                 } else {
-                  showToast({ level: 'error', message: `▌ Add failed — ${m.error ?? 'unknown error'}` })
+                  showToast({ level: 'error', message: `Add failed — ${m.error ?? 'unknown error'}` })
                 }
               }
               const timer = setTimeout(() => {
                 window.removeEventListener('karaoke-msg', onAck)
                 mapRef.delete(newMsgId)
-                showToast({ level: 'error', message: '▌ Add failed — no response from server' })
+                showToast({ level: 'error', message: 'Add failed — no response from server' })
               }, 30_000)
               mapRef.set(newMsgId, { listener: onAck, timer })
               window.addEventListener('karaoke-msg', onAck)

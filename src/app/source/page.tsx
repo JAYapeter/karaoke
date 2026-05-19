@@ -5,6 +5,7 @@ import { VideoPlayer } from '@/components/source/VideoPlayer'
 import { QueueOverlay } from '@/components/source/QueueOverlay'
 import { KeyboardShortcuts } from '@/components/source/KeyboardShortcuts'
 import { Toaster } from '@/components/shared/Toaster'
+import { Tick } from '@/components/shared/Tick'
 import { useConnection } from '@/lib/client/ws'
 
 const isLocalhostOrigin = () => {
@@ -25,7 +26,7 @@ export default function Source() {
     return (
       <div className="page-root" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
         <div className="paper-card paper-grain" style={{ maxWidth: 420 }}>
-          <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}>▌ wrong device</div>
+          <div className="uc" style={{ fontSize: 12, color: 'var(--ink-muted)' }}><Tick />wrong device</div>
           <h2 style={{ fontFamily: 'var(--display-font)', fontStyle: 'italic', fontWeight: 900, fontSize: 22, margin: '8px 0 12px' }}>
             Open this page on the host machine.
           </h2>

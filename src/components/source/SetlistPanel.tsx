@@ -127,7 +127,7 @@ export const SetlistPanel = ({ conn, queue, qrChip }: SetlistPanelProps) => {
           // rest so the `:hover` tint rule can apply (inline `background` would
           // shadow class-defined hover via specificity).
           style={{ color: 'var(--ink-black)', fontSize: 14 }}
-        >🔀</button>
+        >{'\uD83D\uDD00\uFE0E'}</button>
       </div>
       <div style={{ borderBottom: '1px solid var(--ink-deep)', margin: '6px 0' }} />
       {queue.length === 0 && (

@@ -1,5 +1,6 @@
 'use client'
 import { forwardRef } from 'react'
+import { Tick } from '@/components/shared/Tick'
 
 export const OfflineBanner = forwardRef<HTMLDivElement>(function OfflineBanner(_props, ref) {
   return (
@@ -26,7 +27,7 @@ export const OfflineBanner = forwardRef<HTMLDivElement>(function OfflineBanner(_
         // font-size enforced by .offline-banner cascade in riso.css (12 desktop, 13 phones).
       }}
     >
-      ▌ source offline — playback paused
+      <Tick />source offline — playback paused
     </div>
   )
 })
