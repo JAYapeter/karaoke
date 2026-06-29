@@ -17,7 +17,19 @@ brew upgrade yt-dlp
 npm run check-ytdlp
 ```
 
-## Quickstart
+## Easy start (macOS)
+
+After `git clone`, just **double-click `start.command`** in Finder. It installs
+what's missing (dependencies, and `yt-dlp` if Homebrew is present), starts the
+server, and opens the host page automatically. Leave the window open while
+singing; close it to stop.
+
+> First time only: if macOS blocks it, right-click `start.command` → **Open** → **Open**.
+> Node.js still has to be installed first — grab the LTS from [nodejs.org](https://nodejs.org) if the launcher says it's missing.
+
+Then scan the QR (printed in the window) with your phone, or open the LAN URL on any device on the same WiFi.
+
+## Quickstart (manual)
 
 ```bash
 npm install
