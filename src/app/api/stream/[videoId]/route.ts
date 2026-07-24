@@ -1,58 +1,93 @@
-import { _evictStream, resolveStream } from '@/lib/ytdlp/stream'
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import { Readable } from 'node:stream'
+import { ensureLocal } from '@/lib/ytdlp/media-cache'
+import { ROUTE_WAIT_MS } from '@/lib/config'
 import { log } from '@/lib/log'
 
-const upstream = async (videoId: string, range: string | null) => {
-  const stream = await resolveStream(videoId)
-  const headers: Record<string, string> = { ...stream.headers }
-  if (range) headers['Range'] = range
-  return { res: await fetch(stream.url, { headers }), stream }
+export type ParsedRange = { start: number; end: number } | 'unsatisfiable' | null
+
+/** `bytes=START-END` | `bytes=START-` | `bytes=-SUFFIX`. null = serve the whole file. */
+export const parseRange = (header: string | null, size: number): ParsedRange => {
+  if (!header) return null
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!m) return null
+  const [, rawStart = '', rawEnd = ''] = m
+  if (rawStart === '' && rawEnd === '') return null
+
+  let start: number
+  let end: number
+  if (rawStart === '') {
+    const suffix = Number(rawEnd)
+    if (suffix <= 0) return 'unsatisfiable'
+    start = Math.max(0, size - suffix)
+    end = size - 1
+  } else {
+    start = Number(rawStart)
+    end = rawEnd === '' ? size - 1 : Math.min(Number(rawEnd), size - 1)
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null
+  if (start >= size || start > end) return 'unsatisfiable'
+  return { start, end }
 }
 
-const isRecoverable5xx = (status: number) => status >= 500 && status <= 599
-
-// HLS/DASH manifests reference cross-origin segments and taint the <video> element,
-// silencing Web Audio. We refuse to serve them so the source's `player.error` path
-// fires with a visible toast instead of "video plays but audio is silent".
-const TAINTED_CONTENT_TYPES = [
-  'application/vnd.apple.mpegurl',  // HLS .m3u8
-  'application/x-mpegurl',          // HLS .m3u8 (alt)
-  'application/dash+xml',           // DASH manifest
-]
-const isTainted = (ct: string | null) =>
-  !!ct && TAINTED_CONTENT_TYPES.some((t) => ct.toLowerCase().startsWith(t))
+const fileBody = (file: string, start: number, end: number): ReadableStream =>
+  Readable.toWeb(createReadStream(file, { start, end })) as unknown as ReadableStream
 
 export const GET = async (
   req: Request,
   ctx: { params: Promise<{ videoId: string }> },
 ): Promise<Response> => {
   const { videoId } = await ctx.params
-  const range = req.headers.get('Range')
 
-  let r = await upstream(videoId, range)
-  // Refresh on URL-expiry-shaped errors or any upstream 5xx — the URL may be stale.
-  if (r.res.status === 403 || r.res.status === 410 || isRecoverable5xx(r.res.status)) {
-    log('warn', `upstream ${r.res.status} for ${videoId}; evicting and retrying`)
-    _evictStream(videoId)
-    r = await upstream(videoId, range)
+  // Blocks until the song is on disk. Normally a no-op — the queue prefetch has
+  // already fetched it — but the first song of a session waits out its download.
+  // No response byte can be written before this resolves, so the wait is capped: past
+  // ROUTE_WAIT_MS we give up on *this request* and let the client report an error
+  // rather than leave the room staring at a frozen screen. The download itself is left
+  // running, so it will be there next time.
+  let file: string
+  try {
+    const pending = ensureLocal(videoId)
+    pending.catch(() => {}) // we may abandon it below; don't let that go unhandled
+    let timer: NodeJS.Timeout | undefined
+    file = await Promise.race([
+      pending,
+      new Promise<never>((_, rej) => {
+        timer = setTimeout(() => rej(new Error(`still downloading after ${ROUTE_WAIT_MS}ms`)), ROUTE_WAIT_MS)
+      }),
+    ]).finally(() => clearTimeout(timer))
+  } catch (e) {
+    log('error', `media unavailable for ${videoId}`, { error: String(e) })
+    // 503 → the <video> load fails → VideoPlayer reports player.error → toast + skip.
+    return new Response('media unavailable', { status: 503 })
   }
 
-  // After one retry, if still 5xx, surface 502 to the client (clean signal to the source's refresh path).
-  if (isRecoverable5xx(r.res.status)) {
-    return new Response('upstream unavailable', { status: 502 })
-  }
+  const size = (await stat(file).catch(() => null))?.size ?? 0
+  if (size === 0) return new Response('media unavailable', { status: 503 })
 
-  const upstreamCt = r.res.headers.get('Content-Type')
-  if (isTainted(upstreamCt)) {
-    log('error', `refusing tainted content-type "${upstreamCt}" for ${videoId} — yt-dlp picked an HLS/DASH variant`)
-    return new Response('upstream returned a streaming manifest, not progressive media', { status: 415 })
+  const base = {
+    'Content-Type': 'video/mp4',
+    'Accept-Ranges': 'bytes',
+    'Cache-Control': 'no-store',
   }
+  const range = parseRange(req.headers.get('Range'), size)
 
-  const out = new Headers()
-  for (const h of ['Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges']) {
-    const v = r.res.headers.get(h)
-    if (v) out.set(h, v)
+  if (range === 'unsatisfiable') {
+    return new Response(null, { status: 416, headers: { ...base, 'Content-Range': `bytes */${size}` } })
   }
-  out.set('Cache-Control', 'no-store')
-  // 416 (unsatisfiable range) is relayed as-is — Content-Range/* tells the client the current size.
-  return new Response(r.res.body, { status: r.res.status, headers: out })
+  if (range) {
+    return new Response(fileBody(file, range.start, range.end), {
+      status: 206,
+      headers: {
+        ...base,
+        'Content-Length': String(range.end - range.start + 1),
+        'Content-Range': `bytes ${range.start}-${range.end}/${size}`,
+      },
+    })
+  }
+  return new Response(fileBody(file, 0, size - 1), {
+    status: 200,
+    headers: { ...base, 'Content-Length': String(size) },
+  })
 }

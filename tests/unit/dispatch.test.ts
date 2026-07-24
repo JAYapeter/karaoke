@@ -6,6 +6,11 @@ vi.mock('@/lib/ytdlp/meta', () => ({
   fetchMeta: vi.fn().mockResolvedValue({ title: 'T', thumbnail: 'th', durationSec: 100 }),
 }))
 
+// Every queue mutation warms the media cache. Without this the suite would spawn real
+// yt-dlp downloads and write into the on-disk cache.
+vi.mock('@/lib/ytdlp/media-cache', () => ({ prefetch: vi.fn() }))
+import { prefetch } from '@/lib/ytdlp/media-cache'
+
 let store: Store
 let send: ReturnType<typeof vi.fn> & ((msg: any) => void)
 let broadcast: ReturnType<typeof vi.fn> & ((msg: any) => void)

@@ -64,6 +64,18 @@ No HTTPS, certificates, or local-domain trickery required.
 
 1. **Next.js HTTP** — pages, API routes, static assets.
 2. **Media proxy** (`/api/stream/[videoId]`) — fetches YouTube CDN URL via `yt-dlp`, pipes bytes through, supports `Range` headers for seeking and progressive playback.
+
+   > **Superseded (2026-07-24).** The byte-piping proxy is gone. `/api/stream/[videoId]`
+   > now serves a **local file** from an on-disk cache (`src/lib/ytdlp/media-cache.ts`),
+   > which `yt-dlp` + `ffmpeg` download and mux ahead of time, warmed by a prefetch hook
+   > on every queue broadcast. Reason: 1080p exists only as separate video-only and
+   > audio-only DASH streams, so a pass-through proxy could only ever serve YouTube's
+   > single muxed format — itag 18, 360p, with 22 kHz audio on many videos. Serving a
+   > local file also removes network jitter, mid-song URL expiry, and the cross-origin
+   > taint hazard (the reason for the old HLS content-type guard) from playback.
+   > Consequently §"If the proxy can't recover…" below no longer applies: there is no
+   > upstream to fail mid-song, and a failed *download* returns 503, which the source
+   > reports as `player.error` → toast → auto-advance.
 3. **WebSocket server** — attached to the same HTTP server via the `ws` library. One channel for all clients; no rooms (MVP).
 4. **`yt-dlp` worker** — child-process wrapper exposing `searchYouTube(query)` and `getStreamUrls(videoId)`. URLs cached per `videoId` until expiry.
 5. **In-memory state** — queue, history, users, player. No database. State dies on restart (acceptable for a party).

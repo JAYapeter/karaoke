@@ -22,14 +22,19 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-# 2. yt-dlp powers song search + streaming. Install it for them if Homebrew is around.
-if ! command -v yt-dlp >/dev/null 2>&1; then
+# 2. yt-dlp powers song search + downloads; ffmpeg merges YouTube's separate 1080p
+#    video and audio streams. Both are required — without ffmpeg, songs won't play at all.
+MISSING=""
+command -v yt-dlp >/dev/null 2>&1 || MISSING="$MISSING yt-dlp"
+command -v ffmpeg >/dev/null 2>&1 || MISSING="$MISSING ffmpeg"
+if [ -n "$MISSING" ]; then
   if command -v brew >/dev/null 2>&1; then
-    echo "📦  Installing yt-dlp (needed for song search)…"
-    brew install yt-dlp || echo "⚠️  yt-dlp install failed — search may not work until it's installed."
+    echo "📦  Installing$MISSING (needed for song search and HD video)…"
+    # shellcheck disable=SC2086
+    brew install $MISSING || echo "⚠️  Install failed — search or HD video may not work until it succeeds."
   else
-    echo "⚠️  yt-dlp isn't installed and Homebrew is missing, so song search won't work yet."
-    echo "    Install Homebrew (https://brew.sh), then run: brew install yt-dlp"
+    echo "⚠️  Missing$MISSING and Homebrew isn't installed."
+    echo "    Install Homebrew (https://brew.sh), then run: brew install$MISSING"
   fi
   echo
 fi

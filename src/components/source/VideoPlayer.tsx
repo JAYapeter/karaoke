@@ -1,7 +1,7 @@
 'use client'
 import { randomUUID } from '@/lib/client/uuid'
 import { useEffect, useRef, useState } from 'react'
-import { buildAudioGraph, buildAudioGraphNoPitch, type AudioGraph } from '@/lib/client/audio-graph'
+import { buildAudioGraph, type AudioGraph } from '@/lib/client/audio-graph'
 import { setAudioGraph } from '@/lib/client/audio-graph-ref'
 import { createSourceReadyGate, type SourceReadyGate } from '@/lib/client/source-ready-gate'
 import type { Connection } from '@/lib/client/ws'
@@ -33,21 +33,13 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
   useEffect(() => {
     let cancelled = false
     if (!mountRef.current) return
-    const tryWorklet = async (): Promise<{ g: AudioGraph; bypassed: boolean }> => {
-      try {
-        return { g: await buildAudioGraph(mountRef.current!), bypassed: false }
-      } catch (e) {
-        console.warn('Worklet failed, bypassing pitch', e)
-        return { g: await buildAudioGraphNoPitch(mountRef.current!), bypassed: true }
-      }
-    }
-    tryWorklet()
-      .then(({ g, bypassed }) => {
+    buildAudioGraph(mountRef.current)
+      .then((g) => {
         if (cancelled) { g.destroy(); return }
         graphRef.current = g
         setAudioGraph(g)
         setGraphReady(true)
-        if (bypassed) {
+        if (!g.pitchAvailable) {
           // CLIENT-LOCAL toast: dispatching `player.error` to the server doesn't
           // work here because epoch=0/itemId='' is rejected by the stale-epoch
           // guard in dispatch.ts before the broadcast fires. The Toaster's
@@ -62,7 +54,7 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
         }
       })
       .catch((e) => {
-        console.error('Audio graph init failed (no fallback worked)', e)
+        console.error('Audio graph init failed', e)
       })
     return () => {
       cancelled = true
@@ -110,8 +102,12 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
       return
     }
     g.setPitch(player.livePitch)
+    g.resume()
     if (player.epoch !== lastEpochRef.current) {
       lastEpochRef.current = player.epoch
+      // The first song of a session waits out its download; the thumbnail stands in
+      // for the black frame so the wait doesn't read as a hang.
+      g.video.poster = player.item.thumbnail
       g.video.src = `/api/stream/${player.item.videoId}?e=${player.epoch}`
       // Project the resume target: server's last positionSec + wall-clock since update.
       const drift = (Date.now() - player.positionUpdatedAt) / 1000
@@ -120,12 +116,16 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
         Math.max(0, player.item.durationSec - 0.5),
       )
       g.video.currentTime = target
-      g.video.play().catch((e) => {
+      g.video.play().catch((e: unknown) => {
+        // AbortError just means something interrupted this play() — most commonly the
+        // `pause()` two lines below, when we load a song the server has as paused.
+        // Reporting it as player.error would drop a perfectly good song from the queue.
+        if (e instanceof DOMException && e.name === 'AbortError') return
         connRef.current.send({ type: 'player.error', epoch: player.epoch, itemId: player.item.id, message: String(e) })
       })
     }
     if (player.status === 'paused') g.video.pause()
-    if (player.status === 'playing' && g.video.paused) void g.video.play()
+    if (player.status === 'playing' && g.video.paused) void g.video.play().catch(() => {})
   }, [
     graphReady,
     player?.status,
@@ -144,7 +144,7 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
     return () => clearInterval(id)
   }, [])
 
-  // Ended event — re-attaches once the graph is ready (graph.video exists then).
+  // Ended / error events — re-attach once the graph is ready (graph.video exists then).
   useEffect(() => {
     if (!graphReady) return
     const g = graphRef.current
@@ -153,8 +153,36 @@ export const VideoPlayer = ({ conn }: { conn: Connection }) => {
       const p = connRef.current.state?.player
       if (p && p.status !== 'idle') connRef.current.send({ type: 'player.ended', epoch: p.epoch })
     }
+    // Without this, a src that fails to load (download failed → 503) leaves the source
+    // sitting on a dead frame forever: play() only rejects on some failures, and
+    // nothing else reports a media error, so auto-advance never fires.
+    const onError = () => {
+      // The idle path does removeAttribute('src') + load(), which fires a spurious
+      // error. Ignore anything raised while no source is attached.
+      const src = g.video.getAttribute('src')
+      if (!src) return
+      const p = connRef.current.state?.player
+      if (!p || p.status === 'idle') return
+      // Report the epoch carried by the URL that actually failed, not whatever is live
+      // now. The error event is delivered asynchronously, so the player may already have
+      // moved on — and blaming the current epoch would skip an innocent song. A stale
+      // epoch is discarded by the guard in dispatch.ts, which is exactly what we want.
+      const failedEpoch = Number(new URLSearchParams(src.split('?')[1] ?? '').get('e'))
+      if (!Number.isFinite(failedEpoch) || failedEpoch !== p.epoch) return
+      const err = g.video.error
+      connRef.current.send({
+        type: 'player.error',
+        epoch: failedEpoch,
+        itemId: p.item.id,
+        message: err?.message || `media error ${err?.code ?? 'unknown'}`,
+      })
+    }
     g.video.addEventListener('ended', onEnded)
-    return () => g.video.removeEventListener('ended', onEnded)
+    g.video.addEventListener('error', onError)
+    return () => {
+      g.video.removeEventListener('ended', onEnded)
+      g.video.removeEventListener('error', onError)
+    }
   }, [graphReady])
 
   const isPlaying = player && player.status !== 'idle'

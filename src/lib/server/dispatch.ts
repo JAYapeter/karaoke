@@ -10,6 +10,7 @@ import {
 } from './player'
 import { canMove, canRemove, canSetLivePitch, canSetPrePitch, isSourceOnly } from './authority'
 import { fetchMeta } from '@/lib/ytdlp/meta'
+import { prefetch } from '@/lib/ytdlp/media-cache'
 import { RECENT_MSG_IDS_PER_SESSION, PITCH_MAX, PITCH_MIN } from '@/lib/config'
 
 export type Caller = { sessionId: string; isSource: boolean; isLocalhost?: boolean }
@@ -239,11 +240,20 @@ export class Dispatcher {
   }
 
   private broadcastQueueAndPlayer() {
-    this.io.broadcast({ type: 'state.queue', queue: [...this.store.getQueue()], history: [...this.store.getHistory()] })
+    const queue = this.store.getQueue()
+    const history = this.store.getHistory()
+    this.io.broadcast({ type: 'state.queue', queue: [...queue], history: [...history] })
     this.io.broadcast({ type: 'state.player', player: this.store.getPlayer() })
+    // Single warm-the-cache hook. Every queue mutation and every player transition
+    // routes through here, so add/remove/move/shuffle/skip/prev/ended/auto-advance
+    // are all covered from one place. history[0] is included because player.prev
+    // replays from history, which never re-enters the queue.
+    for (const item of [queue[0], queue[1], history[0]]) {
+      if (item) prefetch(item.videoId)
+    }
   }
 
-  /** If idle and source ready and queue non-empty → start next + pre-fetch the upcoming item. */
+  /** If idle and source ready and queue non-empty → start next. */
   private maybeAutoAdvance() {
     const p = this.store.getPlayer()
     if (p.status !== 'idle') return
@@ -253,13 +263,6 @@ export class Dispatcher {
       this.store.setPlayer(r.player)
       this.store.setQueue(r.queue)
       this.broadcastQueueAndPlayer()
-      // Pre-fetch the *next* queue item's stream so its yt-dlp URL is hot when its turn comes.
-      const upcoming = r.queue[0]
-      if (upcoming) {
-        void import('@/lib/ytdlp/stream').then(({ resolveStream }) =>
-          resolveStream(upcoming.videoId).catch(() => {}),
-        )
-      }
     }
   }
 }

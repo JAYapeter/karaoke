@@ -1,87 +1,91 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 
-vi.mock('@/lib/ytdlp/stream', () => ({
-  resolveStream: vi.fn().mockResolvedValue({
-    url: 'https://upstream/test.mp4',
-    headers: { 'User-Agent': 'UA' },
-    expiresAt: Date.now() + 3600_000,
-  }),
-  _evictStream: vi.fn(),
-}))
+const ensureLocal = vi.fn()
+vi.mock('@/lib/ytdlp/media-cache', () => ({ ensureLocal: (id: string) => ensureLocal(id) }))
 
-const fetchMock = vi.fn()
-vi.stubGlobal('fetch', fetchMock)
+import { GET, parseRange } from '@/app/api/stream/[videoId]/route'
 
-import { GET } from '@/app/api/stream/[videoId]/route'
+const BODY = 'abcdefghij' // 10 bytes
+let dir: string
+let file: string
 
-beforeEach(() => fetchMock.mockReset())
+beforeEach(async () => {
+  ensureLocal.mockReset()
+  dir = await mkdtemp(path.join(tmpdir(), 'karaoke-route-'))
+  file = path.join(dir, 'v1.mp4')
+  await writeFile(file, BODY)
+  ensureLocal.mockResolvedValue(file)
+})
+afterEach(() => rm(dir, { recursive: true, force: true }))
 
-describe('stream proxy', () => {
-  it('relays 206 with Content-Range when client sends Range', async () => {
-    fetchMock.mockResolvedValue(new Response('partial', {
-      status: 206,
-      headers: { 'Content-Range': 'bytes 0-99/200', 'Content-Type': 'video/mp4' },
-    }))
-    const req = new Request('http://localhost/api/stream/v1', {
-      headers: { Range: 'bytes=0-99' },
-    })
-    const res = await GET(req, { params: Promise.resolve({ videoId: 'v1' }) })
+const get = (headers: Record<string, string> = {}) =>
+  GET(new Request('http://localhost/api/stream/v1', { headers }), {
+    params: Promise.resolve({ videoId: 'v1' }),
+  })
+
+describe('parseRange', () => {
+  it('returns null with no header or an unparseable one', () => {
+    expect(parseRange(null, 10)).toBeNull()
+    expect(parseRange('items=0-1', 10)).toBeNull()
+    expect(parseRange('bytes=-', 10)).toBeNull()
+  })
+
+  it('parses closed, open-ended and suffix ranges, clamping the end to the file', () => {
+    expect(parseRange('bytes=2-5', 10)).toEqual({ start: 2, end: 5 })
+    expect(parseRange('bytes=4-', 10)).toEqual({ start: 4, end: 9 })
+    expect(parseRange('bytes=0-999', 10)).toEqual({ start: 0, end: 9 })
+    expect(parseRange('bytes=-3', 10)).toEqual({ start: 7, end: 9 })
+    expect(parseRange('bytes=-999', 10)).toEqual({ start: 0, end: 9 })
+  })
+
+  it('flags ranges that start past the end of the file', () => {
+    expect(parseRange('bytes=10-', 10)).toBe('unsatisfiable')
+    expect(parseRange('bytes=99-200', 10)).toBe('unsatisfiable')
+    expect(parseRange('bytes=-0', 10)).toBe('unsatisfiable')
+  })
+})
+
+describe('stream route', () => {
+  it('serves the whole file as 200 with Content-Length and Accept-Ranges', async () => {
+    const res = await get()
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Type')).toBe('video/mp4')
+    expect(res.headers.get('Content-Length')).toBe('10')
+    expect(res.headers.get('Accept-Ranges')).toBe('bytes')
+    expect(await res.text()).toBe(BODY)
+  })
+
+  it('serves 206 with Content-Range and only the requested bytes', async () => {
+    const res = await get({ Range: 'bytes=2-5' })
     expect(res.status).toBe(206)
-    expect(res.headers.get('Content-Range')).toBe('bytes 0-99/200')
+    expect(res.headers.get('Content-Range')).toBe('bytes 2-5/10')
+    expect(res.headers.get('Content-Length')).toBe('4')
+    expect(await res.text()).toBe('cdef')
   })
 
-  it('relays 200 when no Range', async () => {
-    fetchMock.mockResolvedValue(new Response('whole', {
-      status: 200,
-      headers: { 'Content-Type': 'video/mp4' },
-    }))
-    const res = await GET(
-      new Request('http://localhost/api/stream/v1'),
-      { params: Promise.resolve({ videoId: 'v1' }) },
-    )
-    expect(res.status).toBe(200)
+  it('serves 206 for an open-ended range', async () => {
+    const res = await get({ Range: 'bytes=7-' })
+    expect(res.status).toBe(206)
+    expect(res.headers.get('Content-Range')).toBe('bytes 7-9/10')
+    expect(await res.text()).toBe('hij')
   })
 
-  it('on upstream 403 evicts cache and retries once', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('forbidden', { status: 403 }))
-    fetchMock.mockResolvedValueOnce(new Response('ok', { status: 200, headers: { 'Content-Type': 'video/mp4' } }))
-    const res = await GET(
-      new Request('http://localhost/api/stream/v1'),
-      { params: Promise.resolve({ videoId: 'v1' }) },
-    )
-    expect(res.status).toBe(200)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
-
-  it('relays 416 unsatisfiable range', async () => {
-    fetchMock.mockResolvedValue(new Response('', { status: 416, headers: { 'Content-Range': 'bytes */200' } }))
-    const res = await GET(
-      new Request('http://localhost/api/stream/v1', { headers: { Range: 'bytes=999999-' } }),
-      { params: Promise.resolve({ videoId: 'v1' }) },
-    )
+  it('returns 416 with Content-Range */size for an unsatisfiable range', async () => {
+    const res = await get({ Range: 'bytes=999-' })
     expect(res.status).toBe(416)
-    expect(res.headers.get('Content-Range')).toBe('bytes */200')
+    expect(res.headers.get('Content-Range')).toBe('bytes */10')
   })
 
-  it('on mid-range upstream 5xx, evicts and retries once; if still 5xx, relays 502', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('', { status: 503 }))
-    fetchMock.mockResolvedValueOnce(new Response('', { status: 503 }))
-    const res = await GET(
-      new Request('http://localhost/api/stream/v1', { headers: { Range: 'bytes=0-99' } }),
-      { params: Promise.resolve({ videoId: 'v1' }) },
-    )
-    expect(res.status).toBe(502)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+  it('returns 503 when the download fails, so the client reports player.error', async () => {
+    ensureLocal.mockRejectedValue(new Error('yt-dlp exited 1'))
+    expect((await get()).status).toBe(503)
   })
 
-  it('on a non-range upstream 5xx, evicts and retries; if recovered, relays 200', async () => {
-    fetchMock.mockResolvedValueOnce(new Response('', { status: 502 }))
-    fetchMock.mockResolvedValueOnce(new Response('ok', { status: 200, headers: { 'Content-Type': 'video/mp4' } }))
-    const res = await GET(
-      new Request('http://localhost/api/stream/v1'),
-      { params: Promise.resolve({ videoId: 'v1' }) },
-    )
-    expect(res.status).toBe(200)
-    expect(fetchMock).toHaveBeenCalledTimes(2)
+  it('returns 503 rather than a 0-byte body when the cached file is empty', async () => {
+    await writeFile(file, '')
+    expect((await get()).status).toBe(503)
   })
 })

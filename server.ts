@@ -1,4 +1,5 @@
 import { createServer } from 'node:http'
+import { spawn } from 'node:child_process'
 import { parse } from 'node:url'
 import next from 'next'
 import { WebSocketServer } from 'ws'
@@ -76,6 +77,16 @@ const checkYtDlp = async () => {
   } catch {
     log('warn', 'yt-dlp not found on PATH — search and stream extraction will fail. Install with `brew install yt-dlp`.')
   }
+  // ffmpeg merges YouTube's separate 1080p video and audio streams. Without it yt-dlp
+  // still exits 0 but produces no merged file, so EVERY song fails with a confusing
+  // error — worth saying loudly at boot rather than once per song.
+  const ffmpegOk = await new Promise<boolean>((resolve) => {
+    const c = spawn('ffmpeg', ['-version'], { stdio: 'ignore' })
+    c.on('error', () => resolve(false))
+    c.on('close', (code) => resolve(code === 0))
+  })
+  if (ffmpegOk) log('info', 'ffmpeg ready')
+  else log('error', 'ffmpeg NOT found on PATH — playback will fail for every song. Install with `brew install ffmpeg`.')
 }
 
 const printBanner = async () => {
