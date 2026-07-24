@@ -47,3 +47,8 @@ next-env.d.ts
 
 # superpowers
 .superpowers/
+
+# claude code scratch worktrees (full repo copies — this was 623 MB once).
+# Deliberately not ignoring all of .claude/, so .claude/settings.json or
+# .claude/agents/ stay committable if you ever want to share them.
+.claude/worktrees/
